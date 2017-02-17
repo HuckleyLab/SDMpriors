@@ -4,12 +4,10 @@ library(plyr)
 library(rgbif)
 library(GRaF)
 library(pROC)
-
+ 
 #for cleaning data
-#https://cran.r-project.org/web/packages/biogeo/index.html; 
-#https://cran.r-project.org/web/packages/rgeospatialquality/.
-library(biogeo)
-library(rgeospatialquality)
+library(biogeo) #https://cran.r-project.org/web/packages/biogeo/index.html
+library(rgeospatialquality) #https://cran.r-project.org/web/packages/rgeospatialquality/
 
 #--------------------------------
 # load Sunday database
@@ -32,7 +30,11 @@ spec.k=1
 
 #look up species
 key <- name_suggest(q=dat$spec[spec.k], rank='species')$key[1]
-occ=occ_search(taxonKey=key, limit=2000, return="data") 
+
+occ <- occ_data(scientificName=dat$spec[spec.k], limit=1000, minimal=FALSE)
+occ <- occ$data
+
+#occ=occ_search(taxonKey=key, limit=2000, return="data") 
 #fields=c('name','basisOfRecord','protocol')
 #return: can get metadata, etc.
 
@@ -42,71 +44,76 @@ gbifmap(occ)
 #---------------------------
 #clean up data
 
+#restrict to points with lat and lon
+occ<- occ[which(!is.na(occ$"decimalLongitude") & !is.na(occ$"decimalLatitude"))  ,]
+
 #http://onlinelibrary.wiley.com/doi/10.1111/ecog.02118/abstract
-#errorcheck
+#errorcheck(occ)
 #quickclean
 #geo2envpca
 
+#USE rgeospatialquality_rgbif
+#check names
+"countryCode" %in% names(occ)
+"scientificName" %in% names(occ)
+
+##Add quality flags
 #http://rpubs.com/jotegui/rgeospatialquality_rgbif
+occ1 <- add_flags(occ)
 
-#---------------------------
-# Use Worldclim bioclimatic variables (getData function in R raster library). They are widely used and easily available.
+#drop porblematic records
+flags=occ1$flags
+#drop several fields #REVISE
+flags=flags[,-which(names(flags) %in% c("highPrecisionCoordinates","distanceToCountryInKm"))]
 
-# Implement Gaussian Random Fields
+#keep records passing all quality checks
+check= apply(flags, MARGIN=1, FUN=all, na.rm=TRUE)
 
+occ= occ[check,]
 
-# Compare SDM from above to SDM without physiological data and standard SDMS 
+#----------------------------
+#generate pseudo absence
 
-#===================================
-#GENERATE PSEUDO-ABSENCE
-
-require(raster)
 # define circles with a radius of 50 km around the subsampled points
-x = circles(subs[,c("lon","lat")], d=50000, lonlat=T)
+x = circles(occ[,c("decimalLongitude","decimalLatitude")], d=50000, lonlat=T)
 # draw random points that must fall within the circles in object x
 bg = spsample(x@polygons, 100, type='random', iter=100)
-BClim = getData("worldclim", var="bio", res=2.5, path="data/")
-YbrevRange = extent(-119.25,-112.75,33.25,38.25) # define the extent
-BClim = crop(BClim, YbrevRange)
-writeRaster(BClim, filename="./data/YbrevBC_2.5.grd", overwrite=T)
-BClim = brick("data/YbrevBC_2.5.grd")
-# this format plots 1 (of 19) variables stored in BClim
-plot(BClim, 1, cex=0.5, legend=T, mar=par("mar"), xaxt="n", yaxt="n", main="Annual mean temperature (ºC x 10)")
-map("state", xlim=c(-119, -110), ylim=c(33.5, 38), fill=F, col="cornsilk", add=T)
-# state names
-text(x=-117.5, y=35.5, "California", col=rgb(1,1,1,0.6), cex=3)
-text(x=-116, y=37.5, "Nevada", col=rgb(1,1,1,0.6), cex=3)
-text(x=-113, y=34.5, "Arizona", col=rgb(1,1,1,0.6), cex=3)
-text(x=-113, y=37.75, "Utah", col=rgb(1,1,1,0.6), cex=3)
-# plot the presence points
-points(locs$lon, locs$lat, pch=20, cex=2, col="darkgreen")
-# and the pseudo-absence points
-points(bg, cex=0.5, col="darkorange3")
-# add axes
-axis(1,las=1)
-axis(2,las=1)
-box()
 
 #---------------------------
-#EXTRACT BIOCLIM VARIABLES FOR LOCATIONS
+# Use Worldclim bioclimatic variables (getData function in R raster library). 
+BClim = getData("worldclim", var="bio", res=2.5)
+
+#crop to observed range #REVISIT
+ext = extent(rbind(range(occ$decimalLongitude), range(occ$decimalLatitude))) # define the extent
+BClim = crop(BClim, ext)
 
 # pulling bioclim values
-Ybrev_bc = extract(BClim, subs[,c("lon","lat")]) # for the subsampled presence points
+occ_bc = extract(BClim, occ[,c("decimalLongitude","decimalLatitude")] ) # for the subsampled presence points
 bg_bc = extract(BClim, bg) # for the pseudo-absence points
-Ybrev_bc = data.frame(lon=subs$lon, lat=subs$lat, Ybrev_bc)
+occ_bc = data.frame(lon=occ$decimalLongitude, lat=occ$decimalLatitude, occ_bc)
 bgpoints = bg@coords
 colnames(bgpoints) = c("lon","lat")
 bg_bc = data.frame(cbind(bgpoints,bg_bc))
-length(which(is.na(bg_bc$bio1))) # double-check for missing data
-## [1] 0
-bg_bc = bg_bc[!is.na(bg_bc$bio1), ] # and pull out the missing lines
 
-#---------------------------------
+# Create dataframe from bioclim and presense/absance.
+pres<-rep(1,dim(occ_bc)[1])
+temp1<-data.frame(pres,occ_bc[,3:21])
+pres<-rep(0,dim(bg_bc)[1])
+temp2<-data.frame(pres,bg_bc[,3:21])
+df<-rbind(temp1,temp2)
+head(df,5)
 
-#SDM
+#--------------------------------
+# Implement Gaussian Random Fields
 
-#covs <- df[1:1037, c("pres","bio1", "bio12")]# Not sure these are the best variables.
-covs <- df
+covs <- df[, c("pres","bio1", "bio5","bio6")]#Pcik variables
+#covs <- df
+
+#divide var by 10
+covs[,2:ncol(covs)]= covs[,2:ncol(covs)]/10
+
+#remove NAs
+covs= na.omit(covs)
 
 ## 75% of the sample size
 smp_size <- floor(0.75 * nrow(covs))
@@ -117,20 +124,22 @@ test <- covs[-train_ind, ]
 
 pa_tr <- train$pres
 pa_te <- test$pres
-m1 <- graf(pa_tr, train[,2:20])
-pred_df<-data.frame(predict(m1,test[,2:20]))
+m1 <- graf(pa_tr, train[,2:ncol(train)])
+pred_df<-data.frame(predict(m1,test[,2:ncol(train)]))
 
-#print(paste("Area under ROC with No knowledge of thermal niche : ",auc(pa_te, pred_df$posterior.mode)))
-
-thresh <- function(x) ifelse(x$bio1 < 150 | x$bio1 > 350 ,0.3, 0.6)
+#establish function incorporating priors
+thresh <- function(x) ifelse(x$bio6 < dat$tmin[spec.k] | x$bio5 > dat$tmax[spec.k] ,0.1, 0.6)
 
 # fit the model, optimising the lengthscale
 # fit a linear model
 m.lin <- glm(pa_tr ~ bio1, data=train, family = binomial)
+
 # wrap the predict method up in a new function
 lin <- function(temp) predict(m.lin, temp, type = "response")
-m3 <- graf(pa_tr, train[, c(2,6,7), drop = FALSE],opt.l = TRUE, prior = lin)
-pred_df<-data.frame(predict(m3,test[, c(2,6,7), drop = FALSE]))
+m3 <- graf(pa_tr, train[,2:ncol(train), drop = FALSE],opt.l = TRUE, prior = lin)
+pred_df<-data.frame(predict(m3,test[,2:ncol(train), drop = FALSE]))
 print(paste("Area under ROC with prior knowledge of thermal niche : ",auc(pa_te, pred_df$posterior.mode)))
 
+#--------------------------------
+# Compare SDM from above to SDM without physiological data and standard SDMS 
 
