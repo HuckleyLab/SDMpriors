@@ -1,8 +1,8 @@
 #load libraries
-library(dismo)
+library(dismo)  #see also zoon R package?
 library(plyr)
 library(rgbif)
-library(GRaF)
+library(GRaF)  #see methods paper here: http://onlinelibrary.wiley.com/doi/10.1111/2041-210X.12523/pdf
 library(pROC)
 library(ROCR)
  
@@ -74,6 +74,7 @@ occ= occ[check,]
 
 #----------------------------
 #generate pseudo absence
+#ADD also run as presence only
 
 # define circles with a radius of 50 km around the subsampled points
 x = circles(occ[,c("decimalLongitude","decimalLatitude")], d=50000, lonlat=T)
@@ -128,8 +129,9 @@ pa_te <- test$pres
 m1 <- graf(pa_tr, train[,2:ncol(train)])
 pred_df<-data.frame(predict(m1,test[,2:ncol(train)]))
 
+#---------------------------------------------
 #establish function incorporating priors
-thresh <- function(x) ifelse(x$bio6 < dat$tmin[spec.k] | x$bio5 > dat$tmax[spec.k] ,0.1, 0.6)
+thresh <- function(x) ifelse(x$bio1 > dat$tmin[spec.k] & x$bio1 < dat$tmax[spec.k] ,0.6, 0.1)
 
 # fit the model, optimising the lengthscale
 # fit a linear model
@@ -137,12 +139,22 @@ m.lin <- glm(pa_tr ~ bio1, data=train, family = binomial)
 
 # wrap the predict method up in a new function
 lin <- function(temp) predict(m.lin, temp, type = "response")
+
+#NEW THRESHOLD FUNCTION
+#thresh <- function(x) ifelse(x$bio6 > dat$tmin[spec.k] & x$bio5 < dat$tmax[spec.k] ,0.6, 0.1)
+
+
+#---------------------------------------------------
+
 m3 <- graf(pa_tr, train[,2:ncol(train), drop = FALSE],opt.l = TRUE, prior = lin)
+#### m3 <- graf(pa_tr, train[,2:ncol(train), drop = FALSE],opt.l = FALSE, prior = lin)
+
 pred_df<-data.frame(predict(m3,test[,2:ncol(train), drop = FALSE]))
 print(paste("Area under ROC with prior knowledge of thermal niche : ",auc(pa_te, pred_df$posterior.mode)))
 
 #Plot response curves
 plot(m3)
+#plot3d(m3)
 
 #--------------------------------
 # Compare SDM from above to SDM without physiological data and standard SDMS 
@@ -168,7 +180,7 @@ train_a = bg_bc[group_a!=test, c("lon","lat")]
 test_p = occ_bc[group_p==test, c("lon","lat")]
 test_a = bg_bc[group_a==test, c("lon","lat")]
 
-me = maxent(BClim, p=train_p, a=train_a)
+me = maxent(BClim, p=train_p, a=train_a) #modify variables incorporated in maxent model
 e = evaluate(test_p, test_a, me, BClim)
 
 print(e)
@@ -215,5 +227,25 @@ axis(2,las=1)
 
 # restore the box around the map
 box()
+
+#-----------------------------------------
+#GP map
+#https://github.com/goldingn/gp_sdm_paper/blob/master/figures/fig4.R
+
+#predict currently not running
+pred_me = predict(m3, BClim) # generate the predictions
+# make a nice plot
+plot(pred_me, 1, cex=0.5, legend=T, mar=par("mar"), xaxt="n", yaxt="n", main="Predicted presence of the species")
+map("state", xlim=c(-119, -110), ylim=c(33.5, 38), fill=F, col="cornsilk", add=T)
+
+# presence points
+points(locs$lon, locs$lat, pch=20, cex=0.5, col="darkgreen")
+# pseud-absence points
+points(bg, cex=0.5, col="darkorange3")
+
+# add axes
+axis(1,las=1)
+axis(2,las=1)
+
 
 
