@@ -131,6 +131,7 @@ pred_df<-data.frame(predict(m1,test[,2:ncol(train)]))
 
 #---------------------------------------------
 #establish function incorporating priors
+
 thresh <- function(x) ifelse(x$bio1 > dat$tmin[spec.k] & x$bio1 < dat$tmax[spec.k] ,0.6, 0.1)
 
 # fit the model, optimising the lengthscale
@@ -140,14 +141,37 @@ m.lin <- glm(pa_tr ~ bio1, data=train, family = binomial)
 # wrap the predict method up in a new function
 lin <- function(temp) predict(m.lin, temp, type = "response")
 
-#NEW THRESHOLD FUNCTION
-#thresh <- function(x) ifelse(x$bio6 > dat$tmin[spec.k] & x$bio5 < dat$tmax[spec.k] ,0.6, 0.1)
+m3 <- graf(pa_tr, train[,2:ncol(train), drop = FALSE],opt.l = TRUE, prior = lin)
 
+#NEW THRESHOLD FUNCTIONS
+
+#threshold using bio1
+thresh <- function(x) ifelse(x$bio1 > dat$tmin[spec.k] & x$bio1 < dat$tmax[spec.k] ,0.6, 0.1)
+m3 <- graf(pa_tr, train[,2, drop = FALSE],opt.l = TRUE, prior = thresh)
+
+#normal curve using bio1
+n.mean= (dat$tmin[spec.k]+dat$tmax[spec.k])/2
+n.sd= (dat$tmax[spec.k] - dat$tmin[spec.k])/2/3 #set CTs as 3 sds
+
+n.prior= function(x) dnorm(x[,1], mean=n.mean, sd=n.sd)* (1/dnorm(n.mean, mean=n.mean, sd=n.sd)) #normalized to peak at 1
+#plot(1:60, n.prior(1:60))
+
+#m3 <- graf(pa_tr, train[,2, drop = FALSE],opt.l = TRUE, prior = n.prior) #drop=FALSE maintains matrix
+### ERROR
+
+#exponential based on bio5 and bio6
+#start decline ten degrees above / below 
+e.max<-function(x) ifelse(x<dat$tmax[spec.k]-10, p<-1, p<- exp(-(x-dat$tmax[spec.k]+10)/5)) #max  
+e.min<-function(x) ifelse(x<dat$tmin[spec.k], p<-0, p<- 1- exp(-(x-(dat$tmax[spec.k])/10000) ) ) #min fix
+                            
+#plot(-10:60, e.min(-10:60))
+
+#bio1: mean, bio5:max, bio6:min
+e.prior= function(x)cbind(1,e.max(x[,2]),e.min(x[,3]) )
+m3 <- graf(pa_tr, train[,2:4, drop = FALSE],opt.l = TRUE, prior = e.prior)
+### ERROR fix to run on multiple environmental variables
 
 #---------------------------------------------------
-
-m3 <- graf(pa_tr, train[,2:ncol(train), drop = FALSE],opt.l = TRUE, prior = lin)
-#### m3 <- graf(pa_tr, train[,2:ncol(train), drop = FALSE],opt.l = FALSE, prior = lin)
 
 pred_df<-data.frame(predict(m3,test[,2:ncol(train), drop = FALSE]))
 print(paste("Area under ROC with prior knowledge of thermal niche : ",auc(pa_te, pred_df$posterior.mode)))
