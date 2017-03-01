@@ -111,9 +111,10 @@ head(df,5)
 
 covs <- df[, c("pres","bio1", "bio5","bio6")]#Pick variables
 #covs <- df
-
+head(covs, 5)
 #divide var by 10
 covs[,2:ncol(covs)]= covs[,2:ncol(covs)]/10
+head(covs)
 
 #remove NAs
 covs= na.omit(covs)
@@ -133,6 +134,7 @@ pred_df<-data.frame(predict(m1,test[,2:ncol(train)]))
 #plot
 plot(m1)
 
+
 #---------------------------------------------
 #establish function incorporating priors
 
@@ -146,15 +148,17 @@ m.lin <- glm(pa_tr ~ bio1, data=train, family = binomial)
 lin <- function(temp) predict(m.lin, temp, type = "response")
 
 m3 <- graf(pa_tr, train[,2:ncol(train), drop = FALSE],opt.l = TRUE, prior = lin)
+m4 <- graf(pa_tr, train[,2:ncol(train), drop = FALSE],opt.l = TRUE)
 
 plot(m3)
 
 #NEW THRESHOLD FUNCTIONS
 
 #threshold using bio1
-thresh <- function(x) ifelse(x$bio1 > dat$tmin[spec.k] & x$bio1 < dat$tmax[spec.k] ,0.6, 0.1)
+thresh <- function(x) ifelse(x > dat$tmin[spec.k] & x$bio1 < dat$tmax[spec.k] ,0.6, 0.1)
 m3 <- graf(pa_tr, train[,2, drop = FALSE],opt.l = TRUE, prior = thresh)
 
+plot(m3, prior=T)
 #normal curve using bio1
 n.mean= (dat$tmin[spec.k]+dat$tmax[spec.k])/2
 n.sd= (dat$tmax[spec.k] - dat$tmin[spec.k])/2/3 #set CTs as 3 sds
@@ -183,7 +187,9 @@ e.min<-function(x) ifelse(x<dat$tmin[spec.k], p<-0, p<- 1- exp(-(x-(dat$tmax[spe
 
 #bio1: mean, bio5:max, bio6:min
 e.prior= function(x)cbind(1,e.max(x[,2]),e.min(x[,3]) )
-m3 <- graf(pa_tr, train[,2:4, drop = FALSE],opt.l = TRUE, prior = e.prior)
+m3 <- graf(pa_tr, train[,2:4, drop = FALSE],opt.l = TRUE, prior=e.prior)
+#plot3d(m3, prior=FALSE)
+plot(m3, prior=TRUE)
 ### ERROR fix to run on multiple environmental variables
 
 #---------------------------------------------------
@@ -192,7 +198,8 @@ pred_df<-data.frame(predict(m3,test[,2:ncol(train), drop = FALSE]))
 print(paste("Area under ROC with prior knowledge of thermal niche : ",auc(pa_te, pred_df$posterior.mode)))
 
 #Plot response curves
-plot(m3)
+plot(m3, prior=TRUE)
+m3
 #plot3d(m3)
 
 #--------------------------------
