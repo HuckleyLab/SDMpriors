@@ -10,6 +10,7 @@ library(ROCR)
 library(biogeo) #https://cran.r-project.org/web/packages/biogeo/index.html
 library(rgeospatialquality) #https://cran.r-project.org/web/packages/rgeospatialquality/
 
+#tutorial here: https://rawgit.com/goldingn/intecol2013/master/tutorial/graf_workshop.htm
 #--------------------------------
 # load Sunday database
 dat= read.csv("Sundayetal_thermallimits.csv")
@@ -24,7 +25,7 @@ dat$spec = gsub("_"," ",dat$species)
 
 # loop through species
 #for(spec.k in 1:nrow(dat)){
-spec.k=1
+spec.k=55 #Sceloporus occidentalis
 
 #------------------------
 # Query GBIF (R rgbif package) for specimen localities
@@ -108,7 +109,7 @@ head(df,5)
 #--------------------------------
 # Implement Gaussian Random Fields
 
-covs <- df[, c("pres","bio1", "bio5","bio6")]#Pcik variables
+covs <- df[, c("pres","bio1", "bio5","bio6")]#Pick variables
 #covs <- df
 
 #divide var by 10
@@ -129,6 +130,9 @@ pa_te <- test$pres
 m1 <- graf(pa_tr, train[,2:ncol(train)])
 pred_df<-data.frame(predict(m1,test[,2:ncol(train)]))
 
+#plot
+plot(m1)
+
 #---------------------------------------------
 #establish function incorporating priors
 
@@ -143,6 +147,8 @@ lin <- function(temp) predict(m.lin, temp, type = "response")
 
 m3 <- graf(pa_tr, train[,2:ncol(train), drop = FALSE],opt.l = TRUE, prior = lin)
 
+plot(m3)
+
 #NEW THRESHOLD FUNCTIONS
 
 #threshold using bio1
@@ -156,8 +162,17 @@ n.sd= (dat$tmax[spec.k] - dat$tmin[spec.k])/2/3 #set CTs as 3 sds
 n.prior= function(x) dnorm(x[,1], mean=n.mean, sd=n.sd)* (1/dnorm(n.mean, mean=n.mean, sd=n.sd)) #normalized to peak at 1
 #plot(1:60, n.prior(1:60))
 
-#m3 <- graf(pa_tr, train[,2, drop = FALSE],opt.l = TRUE, prior = n.prior) #drop=FALSE maintains matrix
-### ERROR
+m3 <- graf(pa_tr, train[,2, drop = FALSE],opt.l = TRUE, prior = n.prior) #drop=FALSE maintains matrix
+### ERROR previously, but works with S. occidentalis
+
+#plot prior
+plot(m3, prior = TRUE)
+
+#-------------------------------------------
+#Threshold with multiple envi variables, needs fixing
+#Threshold with bio5 and bio6
+e.max<-function(x) ifelse(x<dat$tmax[spec.k], p<-0.8, p<- 0.1) #max  
+e.min<-function(x) ifelse(x<dat$tmin[spec.k], p<-0.1, p<- 0.8) #min
 
 #exponential based on bio5 and bio6
 #start decline ten degrees above / below 
