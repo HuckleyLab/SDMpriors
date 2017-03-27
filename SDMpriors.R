@@ -13,6 +13,7 @@ library(rgeospatialquality) #https://cran.r-project.org/web/packages/rgeospatial
 #tutorial here: https://rawgit.com/goldingn/intecol2013/master/tutorial/graf_workshop.htm
 #--------------------------------
 # load Sunday database
+setwd("~/Dropbox/Projects/UW/SDMpriors/")
 dat= read.csv("Sundayetal_thermallimits.csv")
 #start with reptiles and amphibians
 dat= subset(dat, dat$phylum=="Chordata")
@@ -48,7 +49,7 @@ gbifmap(occ)
 
 #restrict to points with lat and lon
 occ<- occ[which(!is.na(occ$"decimalLongitude") & !is.na(occ$"decimalLatitude"))  ,]
-
+nrow(occ)
 #http://onlinelibrary.wiley.com/doi/10.1111/ecog.02118/abstract
 #errorcheck(occ)
 #quickclean
@@ -79,6 +80,7 @@ occ= occ[check,]
 
 # define circles with a radius of 50 km around the subsampled points
 x = circles(occ[,c("decimalLongitude","decimalLatitude")], d=50000, lonlat=T)
+x
 # draw random points that must fall within the circles in object x
 bg = spsample(x@polygons, 100, type='random', iter=100)
 
@@ -132,7 +134,9 @@ m1 <- graf(pa_tr, train[,2:ncol(train)])
 pred_df<-data.frame(predict(m1,test[,2:ncol(train)]))
 
 #plot
-plot(m1)
+par(mfrow = c(1, 3))
+
+plot(m1, prior=T)
 
 
 #---------------------------------------------
@@ -149,16 +153,19 @@ lin <- function(temp) predict(m.lin, temp, type = "response")
 
 m3 <- graf(pa_tr, train[,2:ncol(train), drop = FALSE],opt.l = TRUE, prior = lin)
 m4 <- graf(pa_tr, train[,2:ncol(train), drop = FALSE],opt.l = TRUE)
+par(mfrow = c(1, 3))
 
-plot(m3)
+plot(m3, prior=TRUE)
+plot3d(m4)
 
 #NEW THRESHOLD FUNCTIONS
 
 #threshold using bio1
 thresh <- function(x) ifelse(x > dat$tmin[spec.k] & x$bio1 < dat$tmax[spec.k] ,0.6, 0.1)
 m3 <- graf(pa_tr, train[,2, drop = FALSE],opt.l = TRUE, prior = thresh)
-
+par(mfrow=c(1,3)) 
 plot(m3, prior=T)
+par(mfrow=c(1,1))
 #normal curve using bio1
 n.mean= (dat$tmin[spec.k]+dat$tmax[spec.k])/2
 n.sd= (dat$tmax[spec.k] - dat$tmin[spec.k])/2/3 #set CTs as 3 sds
@@ -175,21 +182,28 @@ plot(m3, prior = TRUE)
 #-------------------------------------------
 #Threshold with multiple envi variables, needs fixing
 #Threshold with bio5 and bio6
-e.max<-function(x) ifelse(x<dat$tmax[spec.k], p<-0.8, p<- 0.1) #max  
-e.min<-function(x) ifelse(x<dat$tmin[spec.k], p<-0.1, p<- 0.8) #min
+e.max<-function(x) ifelse(x<dat$tmax[spec.k], 0.8, 0.1) #max  
+e.min<-function(x) ifelse(x<dat$tmin[spec.k], 0.1, 0.8) #min
 
 #exponential based on bio5 and bio6
 #start decline ten degrees above / below 
-e.max<-function(x) ifelse(x<dat$tmax[spec.k]-10, p<-1, p<- exp(-(x-dat$tmax[spec.k]+10)/5)) #max  
-e.min<-function(x) ifelse(x<dat$tmin[spec.k], p<-0, p<- 1- exp(-(x-(dat$tmax[spec.k])/10000) ) ) #min fix
+e.max<-function(x) ifelse(x<dat$tmax[spec.k]-10, 0.8, exp(-(x-dat$tmax[spec.k]+10)/5)) #max  
+e.min<-function(x) ifelse(x<dat$tmin[spec.k]   , 0.1, 1- exp(-(x-(dat$tmax[spec.k])/10000) ) ) #min fix
                             
-#plot(-10:60, e.min(-10:60))
 
-#bio1: mean, bio5:max, bio6:min
-e.prior= function(x)cbind(1,e.max(x[,2]),e.min(x[,3]) )
+#bio1: mean, bio5:max, bio6:min (THIS IS A BAD PRIOR -- FOR TESTING)
+e.prior = function(x) e.max(x[,2]) * e.min(x[,3])
+
+
+
 m3 <- graf(pa_tr, train[,2:4, drop = FALSE],opt.l = TRUE, prior=e.prior)
 #plot3d(m3, prior=FALSE)
 plot(m3, prior=TRUE)
+
+e.priordf = function(x) c(1,e.max(x[2]),e.min(x[3])) 
+
+
+
 ### ERROR fix to run on multiple environmental variables
 
 #---------------------------------------------------
@@ -271,7 +285,7 @@ points(bg, cex=0.5, col="darkorange3")
 axis(1,las=1)
 axis(2,las=1)
 
-# restore the box around the map
+# restore the box around the mapaxi
 box()
 
 #-----------------------------------------
