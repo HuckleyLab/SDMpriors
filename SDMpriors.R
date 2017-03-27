@@ -13,7 +13,6 @@ library(rgeospatialquality) #https://cran.r-project.org/web/packages/rgeospatial
 #tutorial here: https://rawgit.com/goldingn/intecol2013/master/tutorial/graf_workshop.htm
 #--------------------------------
 # load Sunday database
-setwd("~/Dropbox/Projects/UW/SDMpriors/")
 dat= read.csv("Sundayetal_thermallimits.csv")
 #start with reptiles and amphibians
 dat= subset(dat, dat$phylum=="Chordata")
