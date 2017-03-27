@@ -133,12 +133,8 @@ pa_te <- test$pres
 m1 <- graf(pa_tr, train[,2:ncol(train)])
 pred_df<-data.frame(predict(m1,test[,2:ncol(train)]))
 
-#plot
 par(mfrow = c(1, 3))
-
-plot(m1, prior=T)
-
-
+plot(m1, prior=TRUE)
 #---------------------------------------------
 #establish function incorporating priors
 
@@ -156,7 +152,7 @@ m4 <- graf(pa_tr, train[,2:ncol(train), drop = FALSE],opt.l = TRUE)
 par(mfrow = c(1, 3))
 
 plot(m3, prior=TRUE)
-plot3d(m4)
+
 
 #NEW THRESHOLD FUNCTIONS
 
@@ -165,7 +161,7 @@ thresh <- function(x) ifelse(x > dat$tmin[spec.k] & x$bio1 < dat$tmax[spec.k] ,0
 m3 <- graf(pa_tr, train[,2, drop = FALSE],opt.l = TRUE, prior = thresh)
 par(mfrow=c(1,3)) 
 plot(m3, prior=T)
-par(mfrow=c(1,1))
+
 #normal curve using bio1
 n.mean= (dat$tmin[spec.k]+dat$tmax[spec.k])/2
 n.sd= (dat$tmax[spec.k] - dat$tmin[spec.k])/2/3 #set CTs as 3 sds
@@ -194,17 +190,9 @@ e.min<-function(x) ifelse(x<dat$tmin[spec.k]   , 0.1, 1- exp(-(x-(dat$tmax[spec.
 #bio1: mean, bio5:max, bio6:min (THIS IS A BAD PRIOR -- FOR TESTING)
 e.prior = function(x) e.max(x[,2]) * e.min(x[,3])
 
-
-
 m3 <- graf(pa_tr, train[,2:4, drop = FALSE],opt.l = TRUE, prior=e.prior)
-#plot3d(m3, prior=FALSE)
 plot(m3, prior=TRUE)
 
-e.priordf = function(x) c(1,e.max(x[2]),e.min(x[3])) 
-
-
-
-### ERROR fix to run on multiple environmental variables
 
 #---------------------------------------------------
 
