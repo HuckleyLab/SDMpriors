@@ -7,6 +7,7 @@ library(pROC)
 library(ROCR)
 library(foreach)
 library(doMC)
+library(rJava)
 registerDoMC(cores=10)
 
 phys = read.csv("Sundayetal_thermallimits.csv")
@@ -16,13 +17,15 @@ paste("We've got Tmin and TMax for", nrow(phys), "species.")
 
 climVars = c("presence", "bio1", "bio5", "bio6")
 
-results = foreach(speciesIdx=seq(1, 30), .errorhandling = 'pass') %dopar% {
-    specName = phys$spec[speciesIdx]
-    print(specName)
+
+runModels = function(physdata, speciesIdx){
+	specName = phys$spec[speciesIdx]
+    print(paste(specName, speciesIdx))
     ## get data from GBIF
     occs = occ_data(scientificName = specName, limit=1000, minimal=TRUE)$data
     if(is.null(occs)) {
-        return(paste("No occurence information for ", specName, ', SKIPPING.'))
+        print(paste("No occurence information for ", specName, ', SKIPPING.'))
+    	return(list(specName, NaN, NaN, NaN, NaN))
     }
     occs = occs[which(!is.na(occs$"decimalLongitude") & !is.na(occs$"decimalLatitude")),]
     
@@ -40,9 +43,8 @@ results = foreach(speciesIdx=seq(1, 30), .errorhandling = 'pass') %dopar% {
     ## assign data to each presence ...
     clim_Pres = extract(BClim, occs[,c("decimalLongitude", "decimalLatitude")])
     if (all(is.na(clim_Pres))) {
-        return(paste("No climate data for ", specName, ", SKIPPING"))
-#         append(results, 0)
-        #return(0) 
+        print(paste("No climate data for ", specName, ", SKIPPING"))
+        return(list(specName, NaN, NaN, NaN, NaN))
     }
 
     clim_Pres = data.frame(lon=occs$decimalLongitude,
@@ -52,6 +54,7 @@ results = foreach(speciesIdx=seq(1, 30), .errorhandling = 'pass') %dopar% {
     clim_Abs  = extract(BClim, abs)
     clim_Abs  = data.frame(lon=abs@coords[,'x'], lat=abs@coords[,'y'], clim_Abs)
         
+    ## assign binary presence (1) absence (0) flags.
     presence = rep(1,dim(clim_Pres)[1])
     presence_temp = data.frame(presence, clim_Pres[,3:ncol(clim_Pres)])
     presence = rep(0, dim(clim_Abs)[1])
@@ -61,9 +64,10 @@ results = foreach(speciesIdx=seq(1, 30), .errorhandling = 'pass') %dopar% {
     ## and combine them. 
     clim_PresAbs = rbind(presence_temp, absence_temp)
     
-    ## extract relevant information
+    ## extract and transform relevant climate information
     covs = clim_PresAbs[, climVars]
     covs[,2:ncol(covs)] = covs[,2:ncol(covs)]/10 ## (BClim needs to be divided by 10)
+    # omit rows with NA
     covs = na.omit(covs)
     
     ## split data into train and test sets.
@@ -82,39 +86,82 @@ results = foreach(speciesIdx=seq(1, 30), .errorhandling = 'pass') %dopar% {
         testCovs = testData[,2:ncol(trainData)]
         numTries =+ 1
     }
-    if (numTries > 1) {print("Warning, many tries")}
-    ## BUILD MODEL
-    # define threshold functions
-    e.max<-function(x) ifelse(x<phys$tmax[speciesIdx]-10, 0.9, exp(-(x-phys$tmax[speciesIdx]+10)/5)) #max  
-    e.min<-function(x) ifelse(x<phys$tmin[speciesIdx]   , 0.1, 1- exp(-(x-(phys$tmax[speciesIdx])/10000) ) ) #min fix
+
+    if (!(length(unique(testPres)) > 1 && length(unique(trainPres)) > 1)){
+        print(paste("Bad train/test split for", specName, ", SKIPPING"))
+        return(list(specName, NaN, NaN, NaN, NaN))
+
+    }
+    ## BUILD MODELS
+
+    # simple model
+    simple = graf(trainPres, trainCovs, opt.l=T)
+
+    # threshold model 
+
+    # define threshold functions and threshold prior.
+    e.max<-function(x) ifelse(x<physdata$tmax[speciesIdx]-10, 0.9, exp(-(x-physdata$tmax[speciesIdx]+10)/5)) #max  
+    e.min<-function(x) ifelse(x<physdata$tmin[speciesIdx]   , 0.1, 1- exp(-(x-(physdata$tmax[speciesIdx])/10000) ) ) #min fix
     e.prior = function(x) e.max(x[,2]) * e.min(x[,3])
 
-    if(any(is.na(qnorm(e.prior(trainCovs))))){
-        return(paste("Error in prior for species ", specName, ", SKIPPING"))
+    if (any(is.na(qnorm(e.prior(trainCovs))))){
+        print(paste("Error in prior for species ", specName, ", SKIPPING"))
+        return(list(specName, NaN, NaN, NaN, NaN))
+
 #         results = append(results, 0)
         #return(0)
     }
-        
-    eModel = graf(trainPres, trainCovs, prior = e.prior)#, opt.l=T) 
 
-    if (!(length(unique(testPres)) > 1 && length(unique(trainPres)) > 1)){
-        return(paste("Bad train/test split for", specName, ", SKIPPING"))
-        
-        #results = append(results, 0)
-        #return(0)
+    eModel = graf(trainPres, trainCovs, prior = e.prior, opt.l=T) 
+
+    # normal prior 
+    ct.mean = physdata$tmax[speciesIdx] - physdata$tmin[speciesIdx]
+    ct.std  = ct.mean / 2
+    ct.thresh <- function(x) ifelse(x$bio6 > physdata$tmin[speciesIdx] & x$bio5 < physdata$tmax[speciesIdx], 1, .00001)
+    ct.prob = function(x) {
+        dnorm(x$bio1, mean=ct.mean, sd = ct.std) * ct.thresh(x)
+    }
+    ct.cumprob = function(x){
+        ct.thresh(x) * (pnorm(x$bio5, mean=ct.mean, sd=ct.std) - pnorm(x$bio6, mean=ct.mean, sd=ct.std))
     }
 
-    ## EVALUATE MODEL
-    csimplePred = data.frame(predict(eModel, testCovs))
-    prob = csimplePred$posterior.mode
-    pred = prediction(prob, testPres)
-    auc  = performance(pred, measure='auc')
-    auc = auc@y.values[[1]]
-    if (is.null(auc)){ return("NULL AUC")}
-    return(auc)
+    ct.model = graf(trainPres, trainCovs, prior = ct.prob, opt.l=T) 
+
+    # MaxEnt model
+    me = maxent(trainCovs , p=trainPres)
+
+    ## EVALUATE MODELS
+    ## order of eval: Simple, e.prior, normal.prior, maxEnt
+    intermed_results = c(specName)
+
+    for (mod in list(simple, eModel, ct.model, me)){
+	    prob = data.frame(predict(mod, testCovs))
+	    if(class(mod) != "MaxEnt") prob = prob$posterior.mode
+	    pred = prediction(prob, testPres)
+	    auc  = performance(pred, measure='auc')
+	    auc = auc@y.values[[1]]
+	    intermed_results = c(intermed_results, auc)
+	}
+	write.table(t(matrix(unlist(intermed_results))), paste("./",gsub(" ", "-", specName),"-intermed.csv", sep=""), sep=",", col.names=FALSE)
+	print(paste("finished index", speciesIdx))
+	return(intermed_results)
 }
 
 
-print(results)
+# for most experiments this loop won't run all the way through. 
+# Seems to get stuck at the end. Not sure why. We push through by
+# segmenting input indices (1..30, 31..60, 61..90, 91..nrow(phys))
+
+results = foreach(speciesIdx=seq(1, nrow(phys)), .errorhandling = 'remove') %dopar% {
+	return(runModels(phys, speciesIdx))
+}
+
+
+
+# # it's unlikely that the code reaches this point. 
+# resultsDF = as.data.frame(t(matrix(unlist(results), nrow=length(unlist(results[1])))))
+# colnames(resultsDF) = c("species", "simple", "eMinMax", "normdist", "maxent")
+# print(resultsDF)
+# write.csv(resultsDF, "./allSpecies_results.csv")
 
 
