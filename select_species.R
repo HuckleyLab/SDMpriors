@@ -7,6 +7,7 @@ get.centroid = function(spec){
 	if (is.null(occs)){
 		print(paste("No occurrence data found for ", spec))
 	}
+	occs = occs[which(!is.na(occs$"decimalLongitude") & !is.na(occs$"decimalLatitude")),]
 	cent.lat = mean(occs$decimalLatitude)
 	cent.lon = mean(occs$decimalLongitude)
 	return(c(cent.lat, cent.lon))
