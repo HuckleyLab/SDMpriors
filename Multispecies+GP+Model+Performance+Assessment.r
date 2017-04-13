@@ -8,6 +8,8 @@ library(ROCR)
 library(foreach)
 library(doMC)
 library(rJava)
+library(optparse)
+ 
 registerDoMC(cores=10)
 
 phys = read.csv("Sundayetal_thermallimits.csv")
