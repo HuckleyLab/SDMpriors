@@ -13,4 +13,4 @@ get.centroid = function(spec){
 	return(c(cent.lat, cent.lon))
 }
 
-lapply(res[10:20,2], get.centroid)
+write.table(lapply(res[,2], get.centroid), "centroids.csv", sep=",", header=FALSE)
