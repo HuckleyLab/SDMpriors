@@ -10,7 +10,7 @@ library(rJava)
 library(optparse)
 
 
-runModels = function(physdata, speciesIdx){
+runModels = function(physdata, speciesIdx, climVars, plots=FALSE, output=TRUE, suffix=NULL){
     #
     # the purpose of this function is to run a series of 
     # species distribution models given physiological information
@@ -23,8 +23,15 @@ runModels = function(physdata, speciesIdx){
     # which contains the results from the model runs
     # in order. 
     
-	specName = phys$spec[speciesIdx]
+	specName = physdata$spec[speciesIdx]
     print(paste(specName, speciesIdx))
+
+    if (!is.null(suffix)){
+        outputSuffix = paste(gsub(" ", "-", specName), "-", suffix, sep="")
+    } else {
+        outputSuffix = paste(gsub(" ", "-", specName), "-", "intermed", sep="")
+    }
+
     ## get data from GBIF
     occs = occ_data(scientificName = specName, limit=1000, minimal=TRUE)$data
     if(is.null(occs)) {
@@ -117,6 +124,13 @@ runModels = function(physdata, speciesIdx){
     }
 
     eModel = graf(trainPres, trainCovs, prior = e.prior, opt.l=T) 
+    if(!is.null(plots)){
+        pdf(paste(outputSuffix, "-eModel.pdf", sep=""))
+        par(mfrow=c(1,length(climVars)-1)) 
+        plot(eModel, prior=T)
+        title(main=paste(outputSuffix, "eModel", sep=""))
+        dev.off()
+    }
 
     # normal prior 
     ct.mean = physdata$tmax[speciesIdx] - physdata$tmin[speciesIdx]
@@ -130,9 +144,23 @@ runModels = function(physdata, speciesIdx){
     }
 
     ct.model = graf(trainPres, trainCovs, prior = ct.prob, opt.l=T) 
+    if(!is.null(plots)){
+        pdf(paste(outputSuffix, "-ct.model.pdf", sep=""))
+        par(mfrow=c(1,length(climVars)-1)) 
+        plot(ct.model, prior=T)
+        title(main=paste(outputSuffix, "ct.model", sep=""))
+        dev.off()
+    }
 
     # MaxEnt model
     me = maxent(trainCovs , p=trainPres)
+    if(!is.null(plots)){
+        pdf(paste(outputSuffix, "-MaxEnt.pdf", sep=""))
+        par(mfrow=c(1,1)) 
+        response(me)
+        title(main=paste(outputSuffix, "MaxEnt", sep=""))
+        dev.off()
+    }
 
     ## EVALUATE MODELS
     ## order of eval: Simple, e.prior, normal.prior, maxEnt
@@ -146,7 +174,8 @@ runModels = function(physdata, speciesIdx){
 	    auc = auc@y.values[[1]]
 	    intermed_results = c(intermed_results, auc)
 	}
-	write.table(t(matrix(unlist(intermed_results))), paste("./",gsub(" ", "-", specName),"-intermed.csv", sep=""), sep=",", col.names=FALSE)
+
+	write.table(t(matrix(unlist(intermed_results))), paste(outputSuffix, ".csv", sep=""), sep=",", col.names=FALSE)
 	print(paste("finished index", speciesIdx))
 	return(intermed_results)
 }

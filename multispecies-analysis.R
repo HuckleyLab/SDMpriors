@@ -8,7 +8,6 @@ registerDoMC(cores=10)
 phys = read.csv("Sundayetal_thermallimits.csv")
 phys= phys[!is.na(phys$tmax) & !is.na(phys$tmin),]
 phys$spec = gsub("_", " ", phys$species)
-paste("We've got Tmin and TMax for", nrow(phys), "species.")
 
 climVars = c("presence", "bio1", "bio5", "bio6")
 
@@ -21,7 +20,7 @@ climVars = c("presence", "bio1", "bio5", "bio6")
 # this parallelized for loop runs the `runmodels` function for each species in the 
 # physiological data file. 
 results = foreach(speciesIdx=seq(1, nrow(phys)), .errorhandling = 'remove') %dopar% {
-	return(runModels(phys, speciesIdx))
+	return(runModels(phys, speciesIdx, climVars))
 }
 
 
