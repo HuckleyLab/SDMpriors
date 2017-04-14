@@ -1,5 +1,15 @@
 library(rgbif)
 
+## get_centroids.R
+##
+# 	usage: rscript get_centroids.R <datafile> <outputfilename>
+#
+#   given a <datafile> with species names in the second column,
+#	will use first 1000 GBIF records to compute centroid of
+#	distribution and put results in a file in the same order 
+#   as the input file. 
+##
+
 args = commandArgs(trailingOnly=TRUE)
 
 res = read.csv(args[1], header=FALSE)
