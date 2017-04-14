@@ -21,6 +21,18 @@ climVars = c("presence", "bio1", "bio5", "bio6")
 
 
 runModels = function(physdata, speciesIdx){
+    #
+    # the purpose of this function is to run a series of 
+    # species distribution models given physiological information
+    # to inform them for a single species.
+    #
+    # It should really be 4 or 5 different functions. 
+    #
+    # each time it runs it produces a .csv file in the current
+    # directory with {speciesname}-intermed.csv as the filename
+    # which contains the results from the model runs
+    # in order. 
+    
 	specName = phys$spec[speciesIdx]
     print(paste(specName, speciesIdx))
     ## get data from GBIF
@@ -154,6 +166,8 @@ runModels = function(physdata, speciesIdx){
 # Seems to get stuck at the end. Not sure why. We push through by
 # segmenting input indices (1..30, 31..60, 61..90, 91..nrow(phys))
 
+# this parallelized for loop runs the `runmodels` function for each species in the 
+# physiological data file. 
 results = foreach(speciesIdx=seq(1, nrow(phys)), .errorhandling = 'remove') %dopar% {
 	return(runModels(phys, speciesIdx))
 }
