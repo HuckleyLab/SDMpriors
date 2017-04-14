@@ -20,7 +20,7 @@ climVars = c("presence", "bio1", "bio5", "bio6")
 
 # this parallelized for loop runs the `runmodels` function for each species in the 
 # physiological data file. 
-results = foreach(speciesIdx=seq(1, 5), .errorhandling = 'remove') %dopar% {
+results = foreach(speciesIdx=seq(1, nrow(phys)), .errorhandling = 'remove') %dopar% {
 	return(runModels(phys, speciesIdx))
 }
 
