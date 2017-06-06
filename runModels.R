@@ -8,9 +8,10 @@ library(foreach)
 library(doMC)
 library(rJava)
 library(optparse)
+source("gbifOccurrence.R")
+source("climPresAbs.R")
 
-
-runModels = function(physdata, speciesIdx, climVars, plots=FALSE, output=TRUE, suffix=NULL){
+runModels = function(physdata, speciesIdx, climVars, occs, plots=FALSE, output=TRUE, suffix=NULL){
     #
     # the purpose of this function is to run a series of 
     # species distribution models given physiological information
@@ -24,6 +25,7 @@ runModels = function(physdata, speciesIdx, climVars, plots=FALSE, output=TRUE, s
     # in order. 
     
 	specName = physdata$spec[speciesIdx]
+
     print(paste(specName, speciesIdx))
 
     if (!is.null(suffix)){
@@ -33,47 +35,19 @@ runModels = function(physdata, speciesIdx, climVars, plots=FALSE, output=TRUE, s
     }
 
     ## get data from GBIF
-    occs = occ_data(scientificName = specName, limit=1000, minimal=TRUE)$data
+
     if(is.null(occs)) {
         print(paste("No occurence information for ", specName, ', SKIPPING.'))
     	return(list(specName, NaN, NaN, NaN, NaN))
     }
-    occs = occs[which(!is.na(occs$"decimalLongitude") & !is.na(occs$"decimalLatitude")),]
     
     
-        
     ## generate presence + absence
-    bufs = circles(occs[,c("decimalLongitude", "decimalLatitude")], d=50000, lonlat=TRUE)
-    abs  = spsample(bufs@polygons, 100, type='random', iter=100)
-    
-    ## get climate data
-    BClim = getData("worldclim", var='bio', res=2.5)
-    specExt = extent(rbind(range(occs$decimalLongitude), range(occs$decimalLatitude)))
-    BClim = crop(BClim, specExt)
-    
-    ## assign data to each presence ...
-    clim_Pres = extract(BClim, occs[,c("decimalLongitude", "decimalLatitude")])
-    if (all(is.na(clim_Pres))) {
+    clim_PresAbs = gbifclimPresAbs(occs)
+    if (is.null(clim_PresAbs)){
         print(paste("No climate data for ", specName, ", SKIPPING"))
         return(list(specName, NaN, NaN, NaN, NaN))
     }
-
-    clim_Pres = data.frame(lon=occs$decimalLongitude,
-                           lat=occs$decimalLatitude,
-                           clim_Pres)
-    ## ..and absence point.
-    clim_Abs  = extract(BClim, abs)
-    clim_Abs  = data.frame(lon=abs@coords[,'x'], lat=abs@coords[,'y'], clim_Abs)
-        
-    ## assign binary presence (1) absence (0) flags.
-    presence = rep(1,dim(clim_Pres)[1])
-    presence_temp = data.frame(presence, clim_Pres[,3:ncol(clim_Pres)])
-    presence = rep(0, dim(clim_Abs)[1])
-    absence_temp = data.frame(presence, clim_Abs[,3:ncol(clim_Abs)])
-    
-
-    ## and combine them. 
-    clim_PresAbs = rbind(presence_temp, absence_temp)
     
     ## extract and transform relevant climate information
     covs = clim_PresAbs[, climVars]

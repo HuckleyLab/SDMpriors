@@ -1,6 +1,7 @@
 library(foreach)
 library(doMC)
 source("runModels.R")
+source("gbifOccurrence.R")
 
  
 registerDoMC(cores=10)
@@ -20,7 +21,7 @@ climVars = c("presence", "bio1", "bio5", "bio6")
 # this parallelized for loop runs the `runmodels` function for each species in the 
 # physiological data file. 
 results = foreach(speciesIdx=seq(1, nrow(phys)), .errorhandling = 'remove') %dopar% {
-	return(runModels(phys, speciesIdx, climVars))
+	return(runModels(phys, speciesIdx, climVars, gbifOccurrence(phys$spec[speciesIdx])))
 }
 
 
