@@ -2,6 +2,8 @@
 library(dismo)  #see also zoon R package?
 library(plyr)
 library(rgbif)
+
+# install_github('GRaF', 'goldingn')
 library(GRaF)  #see methods paper here: http://onlinelibrary.wiley.com/doi/10.1111/2041-210X.12523/pdf
 library(pROC)
 library(ROCR)
@@ -33,7 +35,7 @@ spec.k=55 #Sceloporus occidentalis
 #look up species
 key <- name_suggest(q=dat$spec[spec.k], rank='species')$key[1]
 
-occ <- occ_data(scientificName=dat$spec[spec.k], limit=1000, minimal=FALSE)
+occ <- occ_data(scientificName=dat$spec[spec.k], limit=1000)
 occ <- occ$data
 
 #occ=occ_search(taxonKey=key, limit=2000, return="data") 
@@ -42,6 +44,14 @@ occ <- occ$data
 
 #map
 gbifmap(occ)
+
+#--------------
+#Check out sdmbenchmark
+
+# devtools::install_github("boyanangelov/sdmbench")
+#library(sdmbench)
+
+#benchmarking_data <- get_benchmarking_data("Loxodonta africana", limit = 1200, climate_resolution = 10)
 
 #---------------------------
 #clean up data

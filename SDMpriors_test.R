@@ -1,0 +1,584 @@
+#load libraries
+library(dismo)  #see also zoon R package?
+library(plyr)
+library(rgbif)
+library(GRaF)  #see methods paper here: http://onlinelibrary.wiley.com/doi/10.1111/2041-210X.12523/pdf
+library(pROC)
+library(ROCR)
+ 
+#for cleaning data
+library(biogeo) #https://cran.r-project.org/web/packages/biogeo/index.html
+library(rgeospatialquality) #https://cran.r-project.org/web/packages/rgeospatialquality/
+
+#tutorial here: https://rawgit.com/goldingn/intecol2013/master/tutorial/graf_workshop.htm
+
+#Potential Resources 
+#web: http://sdmdata.sdmserialsoftware.org
+
+#--------------------------------
+# load Sunday database
+setwd("/Users/laurenbuckley/SDMpriors/")
+dat= read.csv("Sundayetal_thermallimits.csv")
+#start with reptiles and amphibians
+dat= subset(dat, dat$phylum=="Chordata")
+#start with species with Tmin and Tmax
+dat= dat[!is.na(dat$tmax) & !is.na(dat$tmin),]
+#subset to critical rather than lethal
+
+#write out list
+setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/")
+write.csv(dat,"SpeciesList.csv")
+
+#species name to enable match
+dat$spec = gsub("_"," ",dat$species)
+
+#------------------------
+# Query GBIF (R rgbif package) for specimen localities
+
+#Write out localities
+setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/GBIF/")
+
+# loop through species
+for(spec.k in 1:28){ #nrow(dat)
+
+#look up species
+key <- name_suggest(q=dat$spec[spec.k], rank='species')$key[1]
+
+occ <- occ_data(scientificName=dat$spec[spec.k], limit=1000)
+occ <- occ$data
+
+#write out
+filename<-paste("GBIFloc_", dat$spec[spec.k],".csv", sep="")
+
+write.csv(occ[,1:5],filename)
+
+} #end looop species
+
+#occ=occ_search(taxonKey=key, limit=2000, return="data") 
+#fields=c('name','basisOfRecord','protocol')
+#return: can get metadata, etc.
+
+spec.k=55 #Sceloporus occidentalis
+spec.k=44 #Uta
+spec.k=56
+
+#-------------------------
+#map
+#gbifmap(occ)
+
+#library(ggmap)
+
+#set up map
+bbox <- ggmap::make_bbox(decimalLongitude, decimalLatitude, occ, f = 0.1)
+
+map_loc <- get_map(location = bbox, source = 'google', maptype = 'terrain')
+map1=ggmap(map_loc, margins=FALSE) #
+
+map1 +geom_point(data=occ, aes(y=decimalLatitude, x=decimalLongitude) ) + coord_cartesian() 
+
+#Using thet GBIF map web tile service, making a raster and visualizing it
+#x <- map_fetch(search = "taxonKey", id = 3118771, year = 2010)
+#library(raster)
+#plot(x)
+
+#---------------------------
+#clean up data
+
+#restrict to points with lat and lon
+occ<- occ[which(!is.na(occ$"decimalLongitude") & !is.na(occ$"decimalLatitude"))  ,]
+
+#http://onlinelibrary.wiley.com/doi/10.1111/ecog.02118/abstract
+#errorcheck(occ)
+#quickclean
+#geo2envpca
+
+#USE rgeospatialquality_rgbif
+#check names
+"countryCode" %in% names(occ)
+"scientificName" %in% names(occ)
+
+# ##Add quality flags
+# #http://rpubs.com/jotegui/rgeospatialquality_rgbif
+# occ1 <- add_flags(occ)
+# 
+# #drop porblematic records
+# flags=occ1$flags
+# #drop several fields #REVISE
+# flags=flags[,-which(names(flags) %in% c("highPrecisionCoordinates","distanceToCountryInKm"))]
+# 
+# #keep records passing all quality checks
+# check= apply(flags, MARGIN=1, FUN=all, na.rm=TRUE)
+# 
+# occ= occ[check,]
+
+#----------------------------
+#generate pseudo absence
+#ADD also run as presence only
+
+# define circles with a radius of 50 km around the subsampled points
+x = circles(occ[,c("decimalLongitude","decimalLatitude")], d=50000, lonlat=T)
+# draw random points that must fall within the circles in object x
+bg = spsample(x@polygons, 1000, type='random', iter=100)
+
+#---------------------------
+# Use Worldclim bioclimatic variables (getData function in R raster library). 
+BClim = getData("worldclim", var="bio", res=2.5)
+
+#crop to observed range 
+ext = extent(rbind(range(occ$decimalLongitude), range(occ$decimalLatitude))) # define the extent
+# extend
+ext[1]= ext[1]-10; ext[2]= ext[2]+10; ext[3]=ext[3]-10; ext[4]=ext[4]+10
+
+BClim = crop(BClim, ext)
+
+# pulling bioclim values
+occ_bc = extract(BClim, occ[,c("decimalLongitude","decimalLatitude")] ) # for the subsampled presence points
+bg_bc = extract(BClim, bg) # for the pseudo-absence points
+occ_bc = data.frame(lon=occ$decimalLongitude, lat=occ$decimalLatitude, occ_bc)
+bgpoints = bg@coords
+colnames(bgpoints) = c("lon","lat")
+bg_bc = data.frame(cbind(bgpoints,bg_bc))
+
+# Create dataframe from bioclim and presense/absance.
+pres<-rep(1,dim(occ_bc)[1])
+temp1<-data.frame(pres,occ_bc[,3:21])
+pres<-rep(0,dim(bg_bc)[1])
+temp2<-data.frame(pres,bg_bc[,3:21])
+df<-rbind(temp1,temp2)
+head(df,5)
+
+locs= occ_bc
+#--------------------------------
+# Implement Gaussian Random Fields
+
+covs <- df[, c("pres","bio1", "bio10","bio11")]#Pick variables #"bio5","bio6"
+#covs <- df
+
+#divide var by 10
+covs[,2:ncol(covs)]= covs[,2:ncol(covs)]/10
+
+#remove NAs
+covs= na.omit(covs)
+
+## 75% of the sample size
+smp_size <- floor(0.75 * nrow(covs))
+set.seed(123)
+train_ind <- sample(seq_len(nrow(covs)), size = smp_size)
+train <- covs[train_ind, ]
+test <- covs[-train_ind, ]
+
+pa_tr <- train$pres
+pa_te <- test$pres
+m1 <- graf(pa_tr, train[,2:ncol(train)])
+pred_df<-data.frame(predict(m1,test[,2:ncol(train)]))
+
+#plot
+plot(m1)
+
+#---------------------------------------------
+#establish function incorporating priors
+
+thresh <- function(x) ifelse(x$bio1 > dat$tmin[spec.k] & x$bio1 < dat$tmax[spec.k] ,0.6, 0.1)
+
+# fit the model, optimising the lengthscale
+# fit a linear model
+m.lin <- glm(pa_tr ~ bio1, data=train, family = binomial)
+
+# wrap the predict method up in a new function
+lin <- function(temp) predict(m.lin, temp, type = "response")
+
+m3 <- graf(pa_tr, train[,2:ncol(train), drop = FALSE],opt.l = TRUE, prior = lin)
+
+plot(m3)
+
+#NEW THRESHOLD FUNCTIONS
+
+#threshold using bio1
+thresh <- function(x) ifelse(x$bio1 > dat$tmin[spec.k] & x$bio1 < dat$tmax[spec.k] ,0.6, 0.1)
+m3 <- graf(pa_tr, train[,2, drop = FALSE],opt.l = TRUE, prior = thresh)
+
+#normal curve using bio1
+n.mean= (dat$tmin[spec.k]+dat$tmax[spec.k])/2
+n.sd= (dat$tmax[spec.k] - dat$tmin[spec.k])/2/3 #set CTs as 3 sds
+
+n.prior= function(x) dnorm(x[,1], mean=n.mean, sd=n.sd)* (1/dnorm(n.mean, mean=n.mean, sd=n.sd)) #normalized to peak at 1
+#plot(1:60, n.prior(1:60))
+
+m3 <- graf(pa_tr, train[,2, drop = FALSE],opt.l = TRUE, prior = n.prior) #drop=FALSE maintains matrix
+### ERROR previously, but works with S. occidentalis
+
+#plot prior
+plot(m3, prior = TRUE)
+
+#-------------------------------------------
+#Threshold with multiple envi variables, needs fixing
+#Threshold with bio5 and bio6
+e.max<-function(x) ifelse(x<dat$tmax[spec.k], p<-0.8, p<- 0.1) #max  
+e.min<-function(x) ifelse(x<dat$tmin[spec.k], p<-0.1, p<- 0.8) #min
+
+#exponential based on bio5 and bio6
+#start decline ten degrees above / below 
+e.max<-function(x) ifelse(x<dat$tmax[spec.k]-10, p<-1, p<- exp(-(x-dat$tmax[spec.k]+10)/5)) #max  
+e.min<-function(x) ifelse(x<dat$tmin[spec.k], p<-0, p<- 1- exp(-(x-(dat$tmax[spec.k])/10000) ) ) #min fix
+                            
+#plot(-10:60, e.min(-10:60))
+
+#bio1: mean, bio5:max, bio6:min
+e.prior= function(x)cbind(1,e.max(x[,2]),e.min(x[,3]) )
+m3 <- graf(pa_tr, train[,2:4, drop = FALSE],opt.l = TRUE, prior = e.prior)
+### ERROR fix to run on multiple environmental variables
+
+########################
+#single ENVI VAR
+
+y= train[,1]
+x= as.data.frame(train[,2])
+
+CTmin1= 5
+CTmax1= 25
+
+e.prior= function(x, CTmin= CTmin1, CTmax= CTmax1){ 
+  Topt= CTmin+ (CTmax-CTmin)*0.7
+  return(TPC(x[,1], Topt, CTmin, CTmax))
+}
+
+#check
+plot(x,e.prior(x[,1]))
+
+
+#run model
+m3 <- graf(y, x,opt.l = FALSE, prior = e.prior )
+
+#--------------
+#MULT ENVI VAR
+
+y= train[,1]
+x= as.data.frame(train[,2:4])
+
+CTmin1= dat$tmin[spec.k]
+CTmax1= dat$tmax[spec.k]
+
+#Performance Curve Function from Deutsch et al. 2008
+TPC= function(T,Topt=33,CTmin=10.45, CTmax=42.62){
+  F=rep(NA, length(T))
+  sigma= (Topt-CTmin)/4
+  ind=which(T<=Topt)
+  F[ind]= exp(-((T[ind]-Topt)/(2*sigma))^2) 
+  ind=which(T>Topt)
+  F[ind]= 1- ((T[ind]-Topt)/(Topt-CTmax))^2
+  #set negetative to zero
+  F[F<0]<-0
+  return(F)
+}
+
+Topt1= CTmin+ (CTmax-CTmin)*0.7
+plot(1:60, TPC(1:60, Topt1, CTmin1, CTmax1))
+
+# x in mean, max, min
+e.prior= function(x, CTmin= CTmin1, CTmax= CTmax1){ 
+  Topt= CTmin+ (CTmax-CTmin)*0.7
+  P1= TPC(x[,1], Topt, CTmin, CTmax)
+  P2= TPC(x[,2], Topt, CTmin, CTmax)
+  P3= TPC(x[,3], Topt, CTmin, CTmax)
+  
+  P2[which(x[,2]<Topt) ]=1
+  P3[which(x[,3]>Topt) ]=1
+  return(cbind(P1,P2,P3))
+}
+
+prior= e.prior(x)
+
+#check
+plot(x[,1],e.prior(x)[,1])
+
+
+#run model
+m3 <- graf(y, x,opt.l = FALSE, prior = e.prior )
+
+m3<- graf(y,x)
+
+#---------
+#GP map
+#https://github.com/goldingn/gp_sdm_paper/blob/master/figures/fig4.R
+
+#predict currently not running
+pred_me = predict(m3, BClim) # generate the predictions
+# make a nice plot
+plot(pred_me, 1, cex=0.5, legend=T, mar=par("mar"), xaxt="n", yaxt="n", main="Predicted presence of the species")
+map("state", xlim=c(-119, -110), ylim=c(33.5, 38), fill=F, col="cornsilk", add=T)
+
+# presence points
+points(locs$lon, locs$lat, pch=20, cex=0.5, col="darkgreen")
+# pseud-absence points
+points(bg, cex=0.5, col="darkorange3")
+
+# add axes
+axis(1,las=1)
+axis(2,las=1)
+
+
+
+#=========================================
+
+pred_df<-data.frame(predict(m3,test[,2:ncol(train), drop = FALSE]))
+print(paste("Area under ROC with prior knowledge of thermal niche : ",auc(pa_te, pred_df$posterior.mode)))
+
+#Plot response curves
+plot(m3)
+#plot3d(m3)
+
+#--------------------------------
+# Compare SDM from above to SDM without physiological data and standard SDMS 
+
+prob <- pred_df$posterior.mode
+pred <- prediction(prob, pa_te)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+
+roc.data <- data.frame(fpr=unlist(perf@x.values),
+                       tpr=unlist(perf@y.values),
+                       model="GP")
+plot(roc.data$fpr,roc.data$tpr,type="l",col="red",ylab="TPR",xlab="FPR",main="ROC for GP vs MaxEnt",lwd=3.5)
+
+group_p = kfold(occ_bc, 5) # vector of group assignments splitting the Ybrev_bc into 5 groups
+group_a = kfold(bg_bc, 5) # ditto for bg_bc
+
+test = 3
+
+train_p = occ_bc[group_p!=test, c("lon","lat")]
+train_a = bg_bc[group_a!=test, c("lon","lat")]
+test_p = occ_bc[group_p==test, c("lon","lat")]
+test_a = bg_bc[group_a==test, c("lon","lat")]
+
+me = maxent(BClim, p=train_p, a=train_a) #modify variables incorporated in maxent model
+e = evaluate(test_p, test_a, me, BClim)
+
+print(e)
+
+#response curves
+response(me)
+
+#------------------------------------
+#ROC plot
+
+probs_me<-c(e@presence,e@absence)
+class_me<-c(rep(1,length(e@presence)),rep(0,length(e@absence)))
+pred_me <- prediction(probs_me, class_me)
+perf_me <- performance(pred_me, measure = "tpr", x.measure = "fpr")
+auc_me <- performance(pred_me, measure = "auc")
+auc_me <- auc_me@y.values[[1]]
+
+roc.data_me <- data.frame(fpr=unlist(perf_me@x.values),
+                          tpr=unlist(perf_me@y.values),
+                          model="ME")
+
+lines(roc.data_me$fpr,roc.data_me$tpr,type="l",col="green",lwd=3.5)
+
+legend(0.6,0.4, # places a legend at the appropriate place 
+       c("GP","MaxEnt"), # puts text in the legend
+       
+       lty=c(1,1), # gives the legend appropriate symbols (lines)
+       
+       lwd=c(2.5,2.5),col=c("red","green"))
+
+#------------------------------------
+#Maxent map
+
+pred_me = predict(me, BClim) # generate the predictions
+# make a nice plot
+plot(pred_me, 1, cex=0.5, legend=T, mar=par("mar"), xaxt="n", yaxt="n", main="Predicted presence of the species")
+
+# presence points
+points(locs$lon, locs$lat, pch=20, cex=0.5, col="darkgreen")
+# pseud-absence points
+points(bg, cex=0.5, col="darkorange3")
+
+# add axes
+axis(1,las=1)
+axis(2,las=1)
+
+# restore the box around the map
+box()
+
+#-----------------------------------------
+#GP map
+#https://github.com/goldingn/gp_sdm_paper/blob/master/figures/fig4.R
+
+#predict currently not running
+pred_me = predict(m3, BClim) # generate the predictions
+# make a nice plot
+plot(pred_me, 1, cex=0.5, legend=T, mar=par("mar"), xaxt="n", yaxt="n", main="Predicted presence of the species")
+map("state", xlim=c(-119, -110), ylim=c(33.5, 38), fill=F, col="cornsilk", add=T)
+
+# presence points
+points(locs$lon, locs$lat, pch=20, cex=0.5, col="darkgreen")
+# pseud-absence points
+points(bg, cex=0.5, col="darkorange3")
+
+# add axes
+axis(1,las=1)
+axis(2,las=1)
+
+#=================================
+m3 <- my.graf(y, x,opt.l = FALSE, prior = e.prior )
+
+
+
+#----
+prior = e.prior
+error = NULL; weights = NULL; prior = NULL; l = NULL; opt.l = FALSE;
+theta.prior.pars = c(log(10), 1); hessian = FALSE; opt.control = list();
+verbose = FALSE; method = "Laplace"
+
+
+my.graf <-  function (y, x, error = NULL, weights = NULL, prior = NULL, l = NULL, opt.l = FALSE,
+            theta.prior.pars = c(log(10), 1), hessian = FALSE, opt.control = list(),
+            verbose = FALSE, method = c('Laplace', 'EP')) {
+    
+    if (opt.l) {
+      # call graf recursively to optimise the lengthscale parameters
+      # if l is specified, use this as the starting point
+      
+      nlposterior <- function(theta) {
+        it <<- it + 1
+        if (verbose) cat(paste('\nlengthscale optimisation iteration', it, '\n'))
+        # define calculate the negative log posterior
+        # if (any(theta > theta.limit)) return(.Machine$double.xmax)
+        l <- rep(NA, k)
+        if (length(notfacs) > 0) l[notfacs] <- exp(theta)
+        if (length(facs) > 0) l[facs] <- 0.01
+        if (any(is.na(l))) stop('missing lengthscales')
+        
+        llik <- -graf(y, x, error, weights, prior = prior, l = l,
+                      verbose = verbose, method = method)$mnll
+        lpri <- theta.prior(theta)
+        lpost <- llik + lpri
+        if (verbose) cat(paste('\nlog posterior:', lpost, '\n'))
+        lpost <- ifelse(is.finite(lpost), lpost, -.Machine$double.xmax)
+        return(-lpost)
+      }
+      
+      k <- ncol(x)
+      # set up initial lengthscales
+      if (is.null(l)) l <- rep(1, k)
+      else if (length(l) != k) stop(paste('l must have', k, 'elements'))
+      
+      # find factors and drop them from theta
+      notfacs <- 1:k
+      facs <- which(unlist(lapply(x, is.factor)))
+      if (length(facs) > 0) {
+        notfacs <- notfacs[-facs]
+        l[facs] <- 0.01
+      }
+      theta <- log(l[notfacs])
+      
+      # if we want the hessian (for later MC integration) turn off the limit to theta 
+      #if (hessian) theta.limit = Inf
+      
+      # use hyperprior parameters
+      theta.prior <- function(theta) {
+        sum(dnorm(theta, theta.prior.pars[1], theta.prior.pars[2], log = TRUE))
+      }
+      
+      it <- 0
+      if (length(notfacs) == 1)  {
+        meth <- 'Brent'
+        low <- -100
+        up <- 100
+      } else {
+        meth <- 'BFGS'
+        low <- -Inf 
+        up <- Inf
+      }
+      # run numerical optimisation on the hyperparameters
+      # if (is.null(opt.tol)) opt.tol <- sqrt(.Machine$double.eps)
+      opt <- optim(theta, nlposterior, hessian = hessian, lower = low, upper = up,
+                   method = meth, control = opt.control)
+      
+      # get the resultant lengthscales
+      l[notfacs] <- exp(opt$par)
+      
+      # replace hessian with the hessian matrix or NULL
+      if(hessian) hessian <- opt$hessian
+      else hessian <- NULL
+      
+      # fit the final model and return
+      return (graf(y, x, error, weights, prior, l = l, verbose = verbose, hessian = hessian, method = method))
+    } # end opt.l if statement
+    
+    method = match.arg(method, c('Laplace', 'EP') )
+    
+    if (!is.data.frame(x)) stop ("x must be a dataframe")
+    
+    # convert any ints to numerics
+    for(i in 1:ncol(x)) if (is.integer(x[, i])) x[, i] <- as.numeric(x[, i])
+    
+    obsx <- x
+    k <- ncol(x)
+    n <- length(y)
+    
+    if (is.null(weights)) {
+      # if weights aren't provided
+      weights <- rep(1, n)
+    } else {
+      # if they are, run some checks
+      # throw an error if weights are specified with EP
+      if (method == 'EP') {
+        stop ('weights are not implemented for the EP algorithm (yet)')
+      }
+      # or if any are negative
+      if (any(weights < 0)) {
+        stop ('weights must be positive or zero')
+      }
+    }
+    
+    # find factors and convert them to numerics
+    notfacs <- 1:k
+    facs <- which(unlist(lapply(x, is.factor)))
+    if (length(facs) > 0) notfacs <- notfacs[-facs]
+    for (fac in facs) {
+      x[, fac] <- as.numeric(x[, fac])
+    }
+    x <- as.matrix(x)
+    
+    # scale the matrix, retaining scaling
+    scaling <- apply(as.matrix(x[, notfacs]), 2, function(x) c(mean(x), sd(x)))
+    for (i in 1:length(notfacs)) {
+      x[, notfacs[i]] <- (x[, notfacs[i]] - scaling[1, i]) / scaling[2, i]
+    }
+    
+    # set up the default prior, if not specified
+    exp.prev <- sum(weights[y == 1]) / sum(weights)
+    if (is.null(prior))  {mnfun <- function(x) rep(exp.prev, nrow(x))
+    }else mnfun <- prior
+    
+    # give an approximation to l, if not specified (or optimised)
+    if (is.null(l)) {
+      l <- rep(0.01, k)
+      l[notfacs] <- apply(x[y == 1, notfacs, drop = FALSE], 2, sd) * 8
+    }
+    # calculate mean (on unscaled data and probability scale)
+    mn <- mnfun(obsx)
+    
+    # fit model
+    if (method == 'Laplace') {
+      # by Laplace approximation
+      fit <- graf.fit.laplace(y = y, x = as.matrix(x), mn = mn, l = l, wt = weights, e = error, verbose = verbose)
+    } else {
+      # or using the expectation-propagation algorithm
+      fit <- graf.fit.ep(y = y, x = as.matrix(x), mn = mn, l = l, wt = weights, e = error, verbose = FALSE)
+    }
+    
+    fit$mnfun = mnfun
+    fit$obsx <- obsx
+    fit$facs <- facs
+    fit$hessian <- hessian
+    fit$scaling <- scaling
+    fit$peak = obsx[which(fit$MAP == max(fit$MAP))[1], ]
+    class(fit) <- "graf"
+    fit
+  }
+
+
+
