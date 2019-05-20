@@ -298,12 +298,173 @@ for(spec.k in 1:58){ #nrow(dat)
 dev.off()
 
 #====================
+#try different predictors and priors
+
+y1= train[,1]
+x1= as.data.frame(train[,2])
+
+#three predictors
+m1= graf(y1,train[,2:4])
+par(mfrow = c(1, 3))
+plot(m1)
+
+m1= graf(y1,as.data.frame(train[,2]))
+plot(m1)
+
+#----------
+#normal generates error
+e.prior= function(x, CTmin= CTmin1, CTmax= CTmax1){ 
+  sd1= (CTmax-CTmin)/6
+  P1= dnorm(x, mean = (CTmax-CTmin)/2, sd = sd1)
+  #scale to height 1
+  P1= P1*sd1/0.4
+  return(P1)
+}
+
+#----------
+#1 in window, 0 outside
+e.prior= function(x, CTmin= CTmin1, CTmax= CTmax1){
+ P1=rep(1, length(x))
+ P1[which(x<CTmin | x>CTmax)]=0
+return(P1)
+}
+
+#---------
+# define the threshold function
+e.prior <- function(x, CTmin= CTmin1, CTmax= CTmax1) ifelse(x< CTmin | x> CTmax, 0.2, 0.6)
+
+# fit the model, optimising the lengthscale
+m3 <- graf(pa, covs[, 1, drop = FALSE], opt.l = TRUE, prior = thresh)
+
+#---
+# fit a linear model
+m.lin <- glm(pa ~ SegSumT, data = covs, family = binomial)
+
+# wrap the predict method up in a new function
+lin <- function(temp) predict(m.lin, temp, type = "response")
+
+# fit the model, optimising the lengthscale
+m4 <- graf(pa, covs[, 1, drop = FALSE], opt.l = TRUE, prior = lin)
 
 
+#----------
 
+plot(1:50, e.prior(1:50))  
 
+m3 <- graf(y1, as.data.frame(train[,2]), prior = e.prior, l=100) #opt.l = TRUE ## adjust lengthscale l = 100,
+plot(m3, prior=TRUE)
 
+#=========
+gensigmoid <- function(x, low, high, rate, v, origin) {
+  # [Generalized Sigmoid function.](https://en.wikipedia.org/wiki/Generalised_logistic_function)
+  return(low + ((high-low)/(1+(rate*exp((x-origin))))^(1/v)))
+}
 
+sigmoid.tmax <- function(env, tmax, tmaxEnvCol){
+  env = env[,c(tmaxEnvCol)]
+  result = ifelse(env<tmax, 0.5, gensigmoid(env, 0.1, 0.5, 5.5, 2.5, tmax))
+  return(result)
+}
+sigmoid.tmin <- function(env, tmin, tminEnvCol) {
+  env = env[,c(tminEnvCol)]
+  result = ifelse(env>tmin, 0.5, gensigmoid(env, 0.5, 0.1, 5.5, 2.5, tmin))
+  return(result)
+}
+sigmoid.range = function(env, tmax, tmin, tmaxEnvCol, tminEnvCol){
+  result = c()
+  
+  evaluate_row = function(row){
+    tmin_e_value = row[c(tminEnvCol)]
+    tmax_e_value = row[c(tmaxEnvCol)]
+    if (is.na(tmin_e_value) || is.na(tmax_e_value)){
+      result = c(result, NA)
+    } else if (tmin_e_value < tmin){
+      result = c(result, gensigmoid(tmin_e_value, 0.5, 0.1, 5.5, 2.5, tmin))
+    } else if (tmax_e_value > tmax){
+      result = c(result, gensigmoid(tmax_e_value, 0.1, 0.5, 5.5, 2.5, tmax))
+    } else{
+      result = c(result, 0.5)
+    }
+  }
+  apply(env, 1, evaluate_row)
+}
+
+#======================
+# virtualspecies
+
+library(virtualspecies)
+
+#tolerance functions
+#betaFun(x, p1, p2, alpha, gamma)
+#x a numeric value or vector. The input environmental variable.
+#p1 a numeric value or vector. Lower tolerance bound for the species
+#p2 a a numeric value or vector. Upper tolerance bound for the species
+#alpha a numeric value or vector. Parameter controlling the shape of the curve 
+#gamma a numeric value or vector. Parameter controlling the shape of the curve
+#When alpha = gamma, the curve is symmetric. 
+#Low values of alpha and gamma result in smooth (< 1) to plateau (< 0.01) curves.
+#Higher values result in peak (> 10) curves.
+#When alpha < gamma, the curve is skewed to the right. When gamma < alpha, the curve is skewed to the left.
+
+my.betaFun= function(x, CTmin= CTmin1, CTmax= CTmax1, alpha=0.3, gamma=0.3)  betaFun(x, CTmin, CTmax, alpha, gamma)
+
+plot(1:60, betaFun(1:60, CTmin1, CTmax1, 0.2, 0.2)) #broad
+plot(1:60, betaFun(1:60, CTmin1, CTmax1, 0.3, 0.3))
+plot(1:60, betaFun(1:60, CTmin1, CTmax1, 0.5,  0.2)) #skewed
+
+m3 <- graf(y1, as.data.frame(train[,2]), prior = my.betaFun, l=100) #opt.l = TRUE ## adjust lengthscale l = 100,
+plot(m3, prior=TRUE)
+
+#-----------
+#custnorm(x, mean, diff, prob)
+# x a numeric value or vector. The input environmental variable.
+# mean a numeric value or vector. The optimum (mean) of the normal curve
+# diff a numeric value or vector. The absolute difference between the mean and extremes.
+# prob a numeric value or vector. The percentage of the area under the curve between the chosen extreme values
+
+my.custnorm= function(x, CTmin= CTmin1, CTmax= CTmax1, prob=0.99){  
+  diff= (CTmax-CTmin)/2-CTmin
+  sd= -diff/qnorm(p = 1 - prob)
+  custnorm(x, mean=(CTmax-CTmin)/2, diff=diff, prob=0.95)*sd/0.4
+}
+
+plot(1:60, my.custnorm(1:60, CTmin= CTmin1, CTmax= CTmax1, prob=0.99) )
+
+m3 <- graf(y1, as.data.frame(train[,2]), prior = my.betaFun, l=100) #opt.l = TRUE ## adjust lengthscale l = 100,
+plot(m3, prior=TRUE)
+
+#=====================================
+#http://borisleroy.com/files/virtualspecies-tutorial.html
+
+#generate virtual species
+library(raster)
+library(sp)
+CTmax= CTmax1; CTmin= CTmin1 
+prob=0.99
+diff= (CTmax-CTmin)/2-CTmin
+mean= (CTmax-CTmin)/2
+sd= -diff/qnorm(p = 1 - prob)  
+
+worldclim <- getData("worldclim", var = "bio", res = 10)
+plot(worldclim[[c("bio1")]]/10)
+
+my.parameters <- formatFunctions(bio1 = c(fun = 'dnorm', mean = mean*10, sd = sd*10) )
+
+my.first.species <- generateSpFromFun(raster.stack = worldclim[[c("bio1")]],
+                                      parameters = my.parameters,
+                                      plot = TRUE)
+plotResponse(my.first.species)
+
+#convert to PA
+pa1 <- convertToPA(my.first.species, beta = 0.65, alpha = -0.07, plot = TRUE)
+
+# Sampling of 'presence only' occurrences
+my.extent <- extent(-150, -100, 20, 40)
+
+presence.points <- sampleOccurrences(pa1,
+                                     n = 100, # The number of points to sample
+                                     type = "presence-absence",
+                                     sampling.area = my.extent)
 
 
 
