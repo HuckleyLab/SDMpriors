@@ -27,7 +27,7 @@ dat= dat[!is.na(dat$tmax) & !is.na(dat$tmin),]
 #subset to critical rather than lethal
 
 #write out list
-setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/")
+setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/presabs/")
 write.csv(dat,"SpeciesList.csv")
 
 #species name to enable match
@@ -139,16 +139,25 @@ tmin_100= mean(temp)
 #------------
 # Raster to xyz
 
-tmax_50.xyz <- rasterToPoints(tmax_50)
-names(tmax_50.xyz)[3]<-"tmax_50"
+micro.brick= brick(tmax_0, tmin_0, tmax_50, tmin_50, tmax_100, tmin_100)
+micro.xyz= rasterToPoints(micro.brick)
+#to data frame
+micro.xyz = as.data.frame(micro.xyz)
+#add names
+names(micro.xyz)[3:8]=c('tmax_0', 'tmin_0', 'tmax_50', 'tmin_50', 'tmax_100', 'tmin_100')
+
+#plot to check
+library(ggplot2)
+ggplot(micro.xyz, aes(micro.xyz[,1],micro.xyz[,2], color=micro.xyz[,3]) )+geom_tile()
+
+setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/presabs/")
+write.csv(micro.xyz, "EnviDat.csv")
 
 #============================================
-#Maps with GRaF
+#Write out presence / absence data
 
-setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/")
-pdf("priorsandGrAF.pdf", height = 10, width = 12)
-
-par(mfrow=c(5,4), cex=1.2, mar=c(3, 3, 1.5, 0.5), oma=c(0,0,0,0), lwd=1, bty="o", tck=0.02, mgp=c(1, 0, 0))
+#setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/presabs/")
+setwd("/Volumes/GoogleDrive/Team Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
 
 for(spec.k in 1:58){ #nrow(dat)
   
@@ -157,7 +166,7 @@ for(spec.k in 1:58){ #nrow(dat)
   filename<-paste("GBIFloc_", dat$spec[spec.k],".csv", sep="")
   
   #check file size
-  if( file.size(filename) > 3 ){
+  if( file.size(filename) > 200 ){
     locs<- read.csv(filename)
     
     #restrict to points with lat and lon
@@ -176,15 +185,17 @@ for(spec.k in 1:58){ #nrow(dat)
     tmin50=  crop(tmin_50, ext)
     tmax100=  crop(tmax_100, ext)
     tmin100=  crop(tmin_100, ext)
-    ##rescale temp
-    #clim=clim/10
-    
+  
+    #---------
+    #Species tolerance data
     #Set up prior
     CTmin1= dat$tmin[spec.k]
     CTmax1= dat$tmax[spec.k]
     #approximate Topt, but fix based on data
     Topt= CTmin1+ (CTmax1-CTmin1)*0.7
+    
     #-----
+    
     # sun to shade
     # thermoregulation scenario
     
@@ -216,27 +227,7 @@ for(spec.k in 1:58){ #nrow(dat)
     tr[tr.ind==3]<- tmin100[tr.ind==3]
     trmin=tr
     
-    #----
-    #Calculate priors
-    
-    #microclim
-    mmean.prior50= calc(tmax50, fun=TPC, CTmin= CTmin1, CTmax=CTmax1, bound="mean") 
-   
-    #thermoregulation functions
-    trmax.prior= calc(trmax, fun=TPC, CTmin= CTmin1, CTmax=CTmax1, bound="mean") 
-    trmin.prior= calc(trmin, fun=TPC, CTmin= CTmin1, CTmax=CTmax1, bound="mean") 
-    
-    #-----
-    #Plot 
-    plot(mmean.prior50, main=dat$spec[spec.k])
-    points(locs$"decimalLongitude", locs$"decimalLatitude", pch=20, cex=0.5, col="darkgreen")
-   
-    plot(trmax.prior)
-    points(locs$"decimalLongitude", locs$"decimalLatitude", pch=20, cex=0.5, col="darkgreen")
-    #plot(trmin.prior)
-    #points(locs$"decimalLongitude", locs$"decimalLatitude", pch=20, cex=0.5, col="darkgreen")
-    
-    #run GRaF
+    #predictors  
     mc_tr= stack(tmax50, trmin, trmax)
     names(mc_tr)=c('tmax50', 'trmin', 'trmax')
     #----------------------------
@@ -259,155 +250,38 @@ for(spec.k in 1:58){ #nrow(dat)
     
     # Create dataframe from bioclim and presense/absance.
     pres<-rep(1,dim(occ_bc)[1])
-    temp1<-data.frame(pres,occ_bc[,3:5])
+    temp1<-data.frame(pres,occ_bc[1:5])
     pres<-rep(0,dim(bg_bc)[1])
-    temp2<-data.frame(pres,bg_bc[,3:5])
+    temp2<-data.frame(pres,bg_bc[1:5])
     df<-rbind(temp1,temp2)
     head(df,5)
     
-    #--------------------------------
-    # Implement Gaussian Random Fields
-    
-    #covs <- df[, c("pres","bio1", "bio10","bio11")]#Pick variables #"bio5","bio6"
     covs <- na.omit(df)
-    
-    ## 75% of the sample size
-    smp_size <- floor(0.75 * nrow(covs))
-    set.seed(123)
-    train_ind <- sample(seq_len(nrow(covs)), size = smp_size)
-    train <- covs[train_ind, ]
-    test <- covs[-train_ind, ]
-    
+  
     #-------------
-    
-    y1= train[,1]
-    x1= as.data.frame(train[,2])
-    
-    # x in mean, max, min
-    e.prior= function(x, CTmin= CTmin1, CTmax= CTmax1){ 
-      Topt= CTmin+ (CTmax-CTmin)*0.7
-      P1= TPC(x[,1], Topt, CTmin, CTmax, bound="mean")
-      return(P1)
-    }
-    
-    #no prior
-    m1 <- graf(y1, x1, l=100)
-    plot(m1)
-    
-    #with prior, one predictor
-    m3 <- graf(y1, x1, prior = e.prior, l=100) #opt.l = TRUE ## adjust lengthscale l = 100,
-    plot(m3, prior=TRUE)
-    
+    #write out
+    setwd("/Volumes/GoogleDrive/Team Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
+    pa.filename<-paste("PresAbs_", dat$spec[spec.k],".csv", sep="")
+    write.csv(covs,pa.filename)
+      
   } #check empty files
 } #end loop speices
 
-dev.off()
-
-#====================
-#try different predictors and priors
-
-y1= train[,1]
-x1= as.data.frame(train[,2])
-
-#three predictors
-m1= graf(y1,train[,2:4])
-par(mfrow = c(1, 3))
-plot(m1)
-
-m1= graf(y1,as.data.frame(train[,2]))
-plot(m1)
-
-#----------
-#normal generates error
-e.prior= function(x, CTmin= CTmin1, CTmax= CTmax1){ 
-  sd1= (CTmax-CTmin)/6
-  P1= dnorm(x, mean = (CTmax-CTmin)/2, sd = sd1)
-  #scale to height 1
-  P1= P1*sd1/0.4
-  return(P1)
-}
-
-#----------
-#1 in window, 0 outside
-e.prior= function(x, CTmin= CTmin1, CTmax= CTmax1){
- P1=rep(1, length(x))
- P1[which(x<CTmin | x>CTmax)]=0
-return(P1)
-}
-
-#---------
-# define the threshold function
-e.prior <- function(x, CTmin= CTmin1, CTmax= CTmax1) ifelse(x< CTmin | x> CTmax, 0.2, 0.6)
-
-# fit the model, optimising the lengthscale
-m3 <- graf(pa, covs[, 1, drop = FALSE], opt.l = TRUE, prior = thresh)
-
-#---
-# fit a linear model
-m.lin <- glm(pa ~ SegSumT, data = covs, family = binomial)
-
-# wrap the predict method up in a new function
-lin <- function(temp) predict(m.lin, temp, type = "response")
-
-# fit the model, optimising the lengthscale
-m4 <- graf(pa, covs[, 1, drop = FALSE], opt.l = TRUE, prior = lin)
-
-
-#----------
-
-plot(1:50, e.prior(1:50))  
-
-m3 <- graf(y1, as.data.frame(train[,2]), prior = e.prior, l=100) #opt.l = TRUE ## adjust lengthscale l = 100,
-plot(m3, prior=TRUE)
-
-#=========
-gensigmoid <- function(x, low, high, rate, v, origin) {
-  # [Generalized Sigmoid function.](https://en.wikipedia.org/wiki/Generalised_logistic_function)
-  return(low + ((high-low)/(1+(rate*exp((x-origin))))^(1/v)))
-}
-
-sigmoid.tmax <- function(env, tmax, tmaxEnvCol){
-  env = env[,c(tmaxEnvCol)]
-  result = ifelse(env<tmax, 0.5, gensigmoid(env, 0.1, 0.5, 5.5, 2.5, tmax))
-  return(result)
-}
-sigmoid.tmin <- function(env, tmin, tminEnvCol) {
-  env = env[,c(tminEnvCol)]
-  result = ifelse(env>tmin, 0.5, gensigmoid(env, 0.5, 0.1, 5.5, 2.5, tmin))
-  return(result)
-}
-sigmoid.range = function(env, tmax, tmin, tmaxEnvCol, tminEnvCol){
-  result = c()
-  
-  evaluate_row = function(row){
-    tmin_e_value = row[c(tminEnvCol)]
-    tmax_e_value = row[c(tmaxEnvCol)]
-    if (is.na(tmin_e_value) || is.na(tmax_e_value)){
-      result = c(result, NA)
-    } else if (tmin_e_value < tmin){
-      result = c(result, gensigmoid(tmin_e_value, 0.5, 0.1, 5.5, 2.5, tmin))
-    } else if (tmax_e_value > tmax){
-      result = c(result, gensigmoid(tmax_e_value, 0.1, 0.5, 5.5, 2.5, tmax))
-    } else{
-      result = c(result, 0.5)
-    }
-  }
-  apply(env, 1, evaluate_row)
-}
-
 #======================
-# Raster to xyz
+#Check PA data
 
-xyz <- rasterToPoints(r)
+keep=NA
 
-# testraster
-r <- raster()
-r[] <- runif(ncell(r))
+for(spec.k in 1:58){ #nrow(dat)
+  
+  #load presence absence
+  setwd("/Volumes/GoogleDrive/Team Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
+  filename<-paste("PresAbs_", dat$spec[spec.k],".csv", sep="")
+  
+  #check file size
+  if( !is.na(file.size(filename)) ) keep=c(keep, spec.k)
+} #end loop species
 
-#coordinates
-coords <- xyFromCell(r,1:ncell(r))
-
-#create list
-xyzlist <- list(x=coords[,'x'],y=coords[,'y'],z=as.matrix(r))
-
+#write out species with PA data
+write.csv(dat[keep[2:length(keep)],], 'SpeciesList_PresAbs.csv')
 

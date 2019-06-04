@@ -1,16 +1,13 @@
-#Polynomial prior?
+#Tolerance functions
 
-
-
-#-------------------
-#PRIORS from virtual species library
-library(virtualspecies)
-
+#example parameters
 CTmin1=5
 CTmax1=35
 
+#PRIORS from virtual species library
+library(virtualspecies)
+
 #-----------
-#tolerance functions
 #betaFun(x, p1, p2, alpha, gamma)
 #x a numeric value or vector. The input environmental variable.
 #p1 a numeric value or vector. Lower tolerance bound for the species
@@ -42,6 +39,19 @@ my.custnorm= function(x, CTmin= CTmin1, CTmax= CTmax1, prob=0.99){
 }
 
 plot(1:40, my.custnorm(1:40, CTmin= CTmin1, CTmax= CTmax1, prob=0.99), type="l")
+
+#-------------------
+#Polynomial prior
+
+poly.prior <- function(x, CTmin= CTmin1, CTmax= CTmax1, pmax=0.5){
+  center= (CTmin+CTmax)/2
+  a= pmax/((center-CTmin)*(center-CTmax))
+  P1=a*(x-CTmin)*(x-CTmax)
+  P1[P1<0]<- 0
+  return(P1)
+}
+
+plot(1:40, poly.prior(1:40, CTmin= CTmin1, CTmax= CTmax1), type="l")
 
 #-----------
 #empirical TPC functions
@@ -93,66 +103,20 @@ plot(1:40, thresh.prior(1:40, CTmin= CTmin1, CTmax= CTmax1), type="l")
 #----------
 #sigmoidal prior
 
-## FIX
-
 gensigmoid <- function(x, low, high, rate, v, origin) {
   # [Generalized Sigmoid function.](https://en.wikipedia.org/wiki/Generalised_logistic_function)
   return(low + ((high-low)/(1+(rate*exp((x-origin))))^(1/v)))
 }
 
-sigmoid.prior<- function(x, low, high, rate, v, origin) {
+sigmoid.prior<- function(x, CTmin= CTmin1, CTmax= CTmax1, low_p=0.1, high_p=0.5, rate_p=5.5, v_p=2.5) {
+  p= rep(NA, length(x))
+  center= (CTmin + CTmax)/2
+  p[which(x<=center)]= gensigmoid(x[which(x<=center)], low=high_p, high=low_p, rate=rate_p, v=v_p, origin=CTmin)
+  p[which(x>center)]= gensigmoid(x[which(x>center)], low=low_p, high=high_p, rate=rate_p, v=v_p, origin=CTmax)
+  return(p)
+}  
   
-#=====  
-  if (is.na(tmin_e_value) || is.na(tmax_e_value)){
-    result = c(result, NA)
-  } else if (tmin_e_value < tmin){
-    result = c(result, gensigmoid(tmin_e_value, 0.5, 0.1, 5.5, 2.5, tmin))
-  } else if (tmax_e_value > tmax){
-    result = c(result, gensigmoid(tmax_e_value, 0.1, 0.5, 5.5, 2.5, tmax))
-  } else{
-    result = c(result, 0.5)
-  }
-  
-}
-
-#max
-plot(1:40, gensigmoid(1:40, 0.1, 0.5, 5.5, 2.5, origin=CTmax1), type="l")
-#min
-plot(1:40, gensigmoid(1:40, 0.5, 0.1, 5.5, 2.5, origin=CTmin1), type="l")
-
-#----
-sigmoid.tmax <- function(env, tmax, tmaxEnvCol){
-  env = env[,c(tmaxEnvCol)]
-  result = ifelse(env<tmax, 0.5, gensigmoid(env, 0.1, 0.5, 5.5, 2.5, tmax))
-  return(result)
-}
-
-sigmoid.tmin <- function(env, tmin, tminEnvCol) {
-  env = env[,c(tminEnvCol)]
-  result = ifelse(env>tmin, 0.5, gensigmoid(env, 0.5, 0.1, 5.5, 2.5, tmin))
-  return(result)
-}
-
-sigmoid.range = function(env, tmax, tmin, tmaxEnvCol, tminEnvCol){
-  result = c()
-  
-  evaluate_row = function(row){
-    tmin_e_value = row[c(tminEnvCol)]
-    tmax_e_value = row[c(tmaxEnvCol)]
-    if (is.na(tmin_e_value) || is.na(tmax_e_value)){
-      result = c(result, NA)
-    } else if (tmin_e_value < tmin){
-      result = c(result, gensigmoid(tmin_e_value, 0.5, 0.1, 5.5, 2.5, tmin))
-    } else if (tmax_e_value > tmax){
-      result = c(result, gensigmoid(tmax_e_value, 0.1, 0.5, 5.5, 2.5, tmax))
-    } else{
-      result = c(result, 0.5)
-    }
-  }
-  apply(env, 1, evaluate_row)
-}
-
-#======================
+plot(1:40, sigmoid.prior(1:40, CTmin= CTmin1, CTmax= CTmax1), type="l")
 
 
 
