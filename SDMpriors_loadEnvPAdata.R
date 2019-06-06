@@ -15,12 +15,12 @@ spec.dat= read.csv("SpeciesList_PresAbs.csv")
 env.dat= read.csv("EnviDat.csv")
 #envi variables are as follows:
 #data from microclim dataset, https://www.nature.com/articles/sdata20146
-#tmax_0= annual daily maximum temperature with 0 shade, tmin_0= annual daily minimum temperature with 0 shade, 
-#tmax_50= annual daily maximum temperature with 50% shade, tmin_50= annual daily minimum temperature with 50% shade, 
-#tmax_100= annual daily maximum temperature with 100% shade, tmin_100= annual daily minimum temperature with 100% shade,  
+#tmax0= annual daily maximum temperature with 0 shade, tmin_0= annual daily minimum temperature with 0 shade, 
+#tmax50= annual daily maximum temperature with 50% shade, tmin_50= annual daily minimum temperature with 50% shade, 
+#tmax100= annual daily maximum temperature with 100% shade, tmin_100= annual daily minimum temperature with 100% shade,  
 
 #plot envi data to check
-#ggplot(env.dat, aes(x,y, color=tmax_50) )+geom_tile()
+#ggplot(env.dat, aes(x,y, color=tmax50) )+geom_tile()
 
 #============================================
 #Load presence / absence data for each species
@@ -34,9 +34,11 @@ for(spec.k in nrow(spec.dat)){
   #load pa data
   pa<- read.csv(filename)
   #envi variables are as follows:
-  #tmax50= annual daily maximum temperature with 50% shade, corresponds to tmax_50 in env.dat
   #trmin= annual daily minimum temperature with thermoregulation, selecting among 0, 50, and 100% shade to get as close to species' Topt as possible
   #trmax= annual daily maximum temperature with thermoregulation, selecting among 0, 50, and 100% shade to get as close to species' Topt as possible
+  #tmax0= annual daily maximum temperature with 0 shade, tmin0= annual daily minimum temperature with 0 shade, 
+  #tmax50= annual daily maximum temperature with 50% shade, tmin50= annual daily minimum temperature with 50% shade, 
+  #tmax100= annual daily maximum temperature with 100% shade, tmin100= annual daily minimum temperature with 100% shade,  
   #can make species specific envi data file for each species if desired
   
   #Species tolerance data
