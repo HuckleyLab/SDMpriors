@@ -3,7 +3,7 @@ library(ggplot2)
 
 #--------------------------------
 #setwd
-setwd("/Volumes/GoogleDrive/Team Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
+setwd("/Volumes/GoogleDrive/Shared Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
 
 #load species data
 #for species with presence absence data, currently 48 species
@@ -28,8 +28,8 @@ env.dat= read.csv("EnviDat.csv")
 for(spec.k in nrow(spec.dat)){ 
   
   #load presence absence
-  setwd("/Volumes/GoogleDrive/Team Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
-  filename<-paste("PresAbs_", dat$spec[spec.k],".csv", sep="")
+  setwd("/Volumes/GoogleDrive/Shared Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
+  filename<-paste("PresAbs_", spec.dat$spec[spec.k],".csv", sep="")
   
   #load pa data
   pa<- read.csv(filename)
@@ -41,8 +41,8 @@ for(spec.k in nrow(spec.dat)){
   
   #Species tolerance data
   #For setting up prior
-  CTmin1= dat$tmin[spec.k]
-  CTmax1= dat$tmax[spec.k]
+  CTmin1= spec.dat$tmin[spec.k]
+  CTmax1= spec.dat$tmax[spec.k]
   #approximate Topt, but fix based on data
   Topt= CTmin1+ (CTmax1-CTmin1)*0.7
     

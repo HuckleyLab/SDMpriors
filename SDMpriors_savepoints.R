@@ -157,12 +157,12 @@ write.csv(micro.xyz, "EnviDat.csv")
 #Write out presence / absence data
 
 #setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/presabs/")
-setwd("/Volumes/GoogleDrive/Team Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
+setwd("/Volumes/GoogleDrive/Shared drives/TrEnCh/Projects/SDMpriors/out/presabs/")
 
 for(spec.k in 1:58){ #nrow(dat)
   
   #load localities
-  setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/GBIF/")
+  setwd("/Volumes/GoogleDrive/Shared drives/TrEnCh/Projects/SDMpriors/out/GBIF/")
   filename<-paste("GBIFloc_", dat$spec[spec.k],".csv", sep="")
   
   #check file size
@@ -228,8 +228,9 @@ for(spec.k in 1:58){ #nrow(dat)
     trmin=tr
     
     #predictors  
-    mc_tr= stack(tmax50, trmin, trmax)
-    names(mc_tr)=c('tmax50', 'trmin', 'trmax')
+    mc_tr= stack(trmin, trmax, tmax0, tmin0, tmax50,tmin50, tmax100, tmin100)
+    names(mc_tr)=c('trmin', 'trmax','tmax0', 'tmin0', 'tmax50','tmin50', 'tmax100', 'tmin100')
+    
     #----------------------------
     #generate pseudo absence
     
@@ -250,9 +251,9 @@ for(spec.k in 1:58){ #nrow(dat)
     
     # Create dataframe from bioclim and presense/absance.
     pres<-rep(1,dim(occ_bc)[1])
-    temp1<-data.frame(pres,occ_bc[1:5])
+    temp1<-data.frame(pres,occ_bc[1:10])
     pres<-rep(0,dim(bg_bc)[1])
-    temp2<-data.frame(pres,bg_bc[1:5])
+    temp2<-data.frame(pres,bg_bc[1:10])
     df<-rbind(temp1,temp2)
     head(df,5)
     
@@ -260,7 +261,7 @@ for(spec.k in 1:58){ #nrow(dat)
   
     #-------------
     #write out
-    setwd("/Volumes/GoogleDrive/Team Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
+    setwd("/Volumes/GoogleDrive/Shared Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
     pa.filename<-paste("PresAbs_", dat$spec[spec.k],".csv", sep="")
     write.csv(covs,pa.filename)
       
@@ -275,7 +276,7 @@ keep=NA
 for(spec.k in 1:58){ #nrow(dat)
   
   #load presence absence
-  setwd("/Volumes/GoogleDrive/Team Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
+  setwd("/Volumes/GoogleDrive/Shared Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
   filename<-paste("PresAbs_", dat$spec[spec.k],".csv", sep="")
   
   #check file size
