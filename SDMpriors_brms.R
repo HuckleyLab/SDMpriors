@@ -27,7 +27,7 @@ setwd("/Volumes/GoogleDrive/Shared Drives/TrEnCh/Projects/SDMpriors/out/presabs/
 dat= read.csv("SpeciesList_PresAbs.csv")
 
 #DATA CAN BE DOWNLOADED TO SHARED DRIVE FOR HERE: https://figshare.com/collections/microclim_Global_estimates_of_hourly_microclimate_based_on_long_term_monthly_climate_averages/878253
-#DATA WAS TOO BIG FOR ME TO TRANSFER ON MY LAPTOP
+#DATA WERE TOO BIG FOR ME TO TRANSFER ON MY LAPTOP
 #USED 1cm Air temperature
 
 #load all clim data
