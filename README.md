@@ -5,9 +5,13 @@ Objectives:
 We aim to test whether using laboratory thermal tolerance data (critical thermal minima and maxima) to inform priors in simple species distribution models can improve model performance in extrapolation to new time periods.
 
 Realted Approaches:
+Marine example: https://www.nature.com/articles/s41598-018-38416-3
+
 multivariate GP spatio-temporal models (R package VAST and a list of references:  https://github.com/James-Thorson-NOAA/VAST#references). 
 
 This Gaussian Random Field R package appears to be no longer maintained, but is a good fit to the application: https://github.com/goldingn/GRaF. Paper here: https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.12523.
+
+Isaac Caruso thesis: https://github.com/icaruso21/bayes-gp-sdm-manuscript 
 
 Source data:
 * Species thermal tolerance data from Sunday et. al (2104, https://www.pnas.org/content/111/15/5610.short). Currently examining 48 species of amphibians and reptiles.
