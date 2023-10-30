@@ -26,8 +26,7 @@ library(ROCR)
 setwd("/Volumes/GoogleDrive/Shared Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
 dat= read.csv("SpeciesList_PresAbs.csv")
 
-#DATA CAN BE DOWNLOADED TO SHARED DRIVE FOR HERE: https://figshare.com/collections/microclim_Global_estimates_of_hourly_microclimate_based_on_long_term_monthly_climate_averages/878253
-#DATA WERE TOO BIG FOR ME TO TRANSFER ON MY LAPTOP
+#DATA CAN BE DOWNLOADED TO SHARED DRIVE FROM HERE: https://figshare.com/collections/microclim_Global_estimates_of_hourly_microclimate_based_on_long_term_monthly_climate_averages/878253
 #USED 1cm Air temperature
 
 #load all clim data
@@ -52,6 +51,8 @@ tmax_100= mean(temp)
 
 #cummulative density function
 #assign 5% above and below CTmin and max
+
+spec.k=1
 
 #Calculate parameters for inverse beta
 #https://betanalpha.github.io/assets/case_studies/gp_part3/part3.html
@@ -100,14 +101,14 @@ plot(s, dlnorm(s, params$mean, params$sd), type = 'l')
 #==================================================
 #BUILD MODELS ACROSS SPECIES
 
-#setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/")
-#pdf("priors_brms.pdf", height = 10, width = 12)
+setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/")
+pdf("priors_brms.pdf", height = 10, width = 12)
 
-#par(mfrow=c(5,4), cex=1.2, mar=c(3, 3, 1.5, 0.5), oma=c(0,0,0,0), lwd=1, bty="o", tck=0.02, mgp=c(1, 0, 0))
+par(mfrow=c(5,4), cex=1.2, mar=c(3, 3, 1.5, 0.5), oma=c(0,0,0,0), lwd=1, bty="o", tck=0.02, mgp=c(1, 0, 0))
 
 #loop species
-#for(spec.k in 1:nrow(dat)){
-spec.k=4
+for(spec.k in 1:nrow(dat)){
+#spec.k=4
 
 #load presence absence
 setwd("/Volumes/GoogleDrive/Shared Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
@@ -222,12 +223,12 @@ fit_np <- brm(pres ~ gp(trmax, k=5, c=1.25), data=pa,
 #PLOTS
 
 #plot GP with phys prior
-me1 <- conditional_effects(fit_pp, nsamples = 200, spaghetti = TRUE)
-resp_pp= plot(me1, ask = FALSE, points = TRUE, ylim=c(0,1))
+me_pp <- conditional_effects(fit_pp, nsamples = 200, spaghetti = TRUE)
+resp_pp= plot(me_pp, ask = FALSE, points = TRUE, ylim=c(0,1))
 
 #plot GP with no phys prior
-me1 <- conditional_effects(fit_np, nsamples = 200, spaghetti = TRUE)
-resp_np= plot(me1, ask = FALSE, points = TRUE, ylim=c(0,1))
+me_np<- conditional_effects(fit_np, nsamples = 200, spaghetti = TRUE)
+resp_np= plot(me_np, ask = FALSE, points = TRUE, ylim=c(0,1))
 
 #predictions
 pred_pp= predict(fit_pp, newdata=pts)
@@ -242,6 +243,10 @@ pts.l <- melt(pts, id=c("lon","lat","trmax"))
 #presence points
 pres= subset(pa, pa$pres=="1")
 pres$variable="occ_pp"
+#replicate pres for plotting
+pres2<- pres
+pres2$variable="occ_np"
+pres.all= rbind(pres, pres2)
 
 #trmax
 tr.plot=ggplot(pts, aes(lat, lon, fill= trmax)) + 
@@ -249,16 +254,17 @@ tr.plot=ggplot(pts, aes(lat, lon, fill= trmax)) +
 
 #predictions
 occ.plot= ggplot(pts.l, aes(lat, lon)) + 
-  geom_tile(aes(fill= value))+scale_fill_viridis(na.value = 'grey') +facet_wrap(~variable, nrow=1)
+  geom_tile(aes(fill= value))+scale_fill_viridis(na.value = 'grey') +facet_wrap(~variable, nrow=1)+
+  ggtitle(dat$species[spec.k])
 #add localities
-occ.plot= occ.plot +geom_point(pres, mapping=aes(lat, lon, color="red"))
+occ.plot= occ.plot +geom_point(pres.all, mapping=aes(lat, lon, color="red"))
 
 #combine plots
-occ.plot
+print(occ.plot)
 #plot_grid(tr.plot, occ.plot, resp_np, resp_pp)
 
-#} #end loop species
-#dev.off()
+} #end loop species
+dev.off()
 
 #---------------------------
 #ROC assessments
