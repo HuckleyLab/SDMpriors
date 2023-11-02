@@ -98,6 +98,49 @@ params= param_lnormal(dat[spec.k,"tmin"],dat[spec.k,"tmax"])
 s <- seq(0, 5, 0.1)
 plot(s, dlnorm(s, params$mean, params$sd), type = 'l')
 
+#-----------------------------
+#Plot priors and Pres Absence
+
+temps <- seq(0, 50, 1)
+
+pa.plots <- vector('list', nrow(dat))
+
+for(spec.k in 1:nrow(dat)){
+
+  #load presence absence
+  setwd("/Volumes/GoogleDrive/Shared Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
+  pa= read.csv(paste("PresAbs_",dat$spec[spec.k],".csv",sep=""))
+
+  params= param_normal(dat[spec.k,"tmin"],dat[spec.k,"tmax"])
+  lp= as.data.frame(cbind(temps, dnorm(s, params$mean, params$sd)))
+  lp$lp.norm= lp[,2]/max(lp[,2])
+  
+  pa.plot= ggplot(data=pa, aes(x=trmax, y = pres))+
+    geom_point()+
+    ggtitle(dat$species[spec.k])
+  
+  pa.plot= pa.plot + 
+    geom_line(data=lp, aes(x=temps, y = lp.norm))
+    
+  pa.plots[[spec.k]] <-print(pa.plot)
+} #end loop species
+
+
+setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/")
+library(gridExtra)
+
+pdf("priors_pa.pdf", onefile = TRUE)
+for (i in seq(length(pa.plots))) {
+  do.call("grid.arrange", pa.plots[[i]])  
+}
+dev.off()
+
+ggsave(
+  filename = "priors_pa.pdf", 
+  plot = marrangeGrob(pa.plots, nrow=4, ncol=4), 
+  width = 15, height = 9
+)
+
 #==================================================
 #BUILD MODELS ACROSS SPECIES
 
