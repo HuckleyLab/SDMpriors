@@ -60,8 +60,13 @@ error_invgamma=function(comb, CTmin, CTmax){
   (abs(pinvgamma(CTmin, comb[1], comb[2])-0.05) + abs(pinvgamma(CTmax, comb[1], comb[2])-0.95))/2
 }
 
+#error_normal=function(comb, CTmin, CTmax){
+#  (abs(pnorm(CTmin, comb[1], comb[2])-0.05) + abs(pnorm(CTmax, comb[1], comb[2])-0.95))/2
+#}
+
+#try stronger constraint
 error_normal=function(comb, CTmin, CTmax){
-  (abs(pnorm(CTmin, comb[1], comb[2])-0.05) + abs(pnorm(CTmax, comb[1], comb[2])-0.95))/2
+  (abs(pnorm(CTmin, comb[1], comb[2])-0.001) + abs(pnorm(CTmax, comb[1], comb[2])-0.999))/2
 }
 
 error_lnormal=function(comb, CTmin, CTmax){
@@ -112,7 +117,7 @@ for(spec.k in 1:nrow(dat)){
   pa= read.csv(paste("PresAbs_",dat$spec[spec.k],".csv",sep=""))
 
   params= param_normal(dat[spec.k,"tmin"],dat[spec.k,"tmax"])
-  lp= as.data.frame(cbind(temps, dnorm(s, params$mean, params$sd)))
+  lp= as.data.frame(cbind(temps, dnorm(temps, params$mean, params$sd)))
   lp$lp.norm= lp[,2]/max(lp[,2])
   
   pa.plot= ggplot(data=pa, aes(x=trmax, y = pres))+
@@ -121,19 +126,16 @@ for(spec.k in 1:nrow(dat)){
   
   pa.plot= pa.plot + 
     geom_line(data=lp, aes(x=temps, y = lp.norm))
-    
+  
+  pa.plot= pa.plot +
+    geom_point(data=dat[spec.k,], aes(x=tmin, y = 0), color="red")+
+    geom_point(data=dat[spec.k,], aes(x=tmax, y = 0), color="red")
+  
   pa.plots[[spec.k]] <-print(pa.plot)
 } #end loop species
 
-
 setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/")
 library(gridExtra)
-
-pdf("priors_pa.pdf", onefile = TRUE)
-for (i in seq(length(pa.plots))) {
-  do.call("grid.arrange", pa.plots[[i]])  
-}
-dev.off()
 
 ggsave(
   filename = "priors_pa.pdf", 
@@ -218,7 +220,9 @@ prior$prior[1]="student_t(3, 0, 10)"
 #need to normalize data?
 
 #sd of gp
-prior$prior[4]="student_t(3, 0, 1)"
+#prior$prior[4]="student_t(3, 0, 1)"
+#REDUCE SD
+prior$prior[4]= "student_t(3, 0, .1)"
 
 #length scale
 #params= param_irvgamma(dat[spec.k,"tmin"],dat[spec.k,"tmax"])
