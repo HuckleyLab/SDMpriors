@@ -13,6 +13,11 @@ library(biogeo) #https://cran.r-project.org/web/packages/biogeo/index.html
 library(rgeospatialquality) #https://cran.r-project.org/web/packages/rgeospatialquality/
 
 #tutorial here: https://rawgit.com/goldingn/intecol2013/master/tutorial/graf_workshop.htm
+
+#Other tools
+#https://github.com/martiningram/sdm_ml
+#https://ecology.ghislainv.fr/hSDM/
+
 #--------------------------------
 # load Sunday database
 dat= read.csv("Sundayetal_thermallimits.csv")

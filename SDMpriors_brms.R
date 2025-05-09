@@ -21,28 +21,33 @@ library(ROCR)
 #https://www.rensvandeschoot.com/tutorials/brms-started/
 #https://discourse.mc-stan.org/t/space-time-models-in-stan-brms/4735
 
+#setwd
+desktop<- "y"
+
 #--------------------------------
 # load physiological priors from Sunday database
-setwd("/Volumes/GoogleDrive/Shared Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
-dat= read.csv("SpeciesList_PresAbs.csv")
+if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
+if(desktop=="n") setwd("/Users/lbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
+
+dat= read.csv("out/presabs/SpeciesList_PresAbs.csv")
 
 #DATA CAN BE DOWNLOADED TO SHARED DRIVE FROM HERE: https://figshare.com/collections/microclim_Global_estimates_of_hourly_microclimate_based_on_long_term_monthly_climate_averages/878253
 #USED 1cm Air temperature
 
+if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/My Drive/Buckley/Work/SDMpriors/")
+if(desktop=="n") setwd("/Users/lbuckley/Google Drive/My Drive/Buckley/Work/SDMpriors/")
+
 #load all clim data
-setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/data/microclim/0_shade/")
 #use july for max
-temp= brick("TA1cm_soil_0_7.nc")
+temp= brick("data/microclim/0_shade/TA1cm_soil_0_7.nc")
 tmax_0= mean(temp) #or max
 
-setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/data/microclim/50_shade/")
 #use july for max
-temp= brick("TA1cm_soil_50_7.nc")
+temp= brick("data/microclim/50_shade/TA1cm_soil_50_7.nc")
 tmax_50= mean(temp)
 
-setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/data/microclim/100_shade/")
 #use july for max
-temp= brick("TA1cm_soil_100_7.nc")
+temp= brick("data/microclim/100_shade/TA1cm_soil_100_7.nc")
 tmax_100= mean(temp)
 
 #-----
@@ -106,6 +111,9 @@ plot(s, dlnorm(s, params$mean, params$sd), type = 'l')
 #-----------------------------
 #Plot priors and Pres Absence
 
+if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
+if(desktop=="n") setwd("/Users/lbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
+
 temps <- seq(0, 50, 1)
 
 pa.plots <- vector('list', nrow(dat))
@@ -113,8 +121,7 @@ pa.plots <- vector('list', nrow(dat))
 for(spec.k in 1:nrow(dat)){
 
   #load presence absence
-  setwd("/Volumes/GoogleDrive/Shared Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
-  pa= read.csv(paste("PresAbs_",dat$spec[spec.k],".csv",sep=""))
+  pa= read.csv(paste("out/presabs/PresAbs_",dat$spec[spec.k],".csv",sep=""))
 
   params= param_normal(dat[spec.k,"tmin"],dat[spec.k,"tmax"])
   lp= as.data.frame(cbind(temps, dnorm(temps, params$mean, params$sd)))
@@ -134,11 +141,10 @@ for(spec.k in 1:nrow(dat)){
   pa.plots[[spec.k]] <-print(pa.plot)
 } #end loop species
 
-setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/")
 library(gridExtra)
 
 ggsave(
-  filename = "priors_pa.pdf", 
+  filename = "out/priors_pa.pdf", 
   plot = marrangeGrob(pa.plots, nrow=4, ncol=4), 
   width = 15, height = 9
 )
@@ -146,8 +152,7 @@ ggsave(
 #==================================================
 #BUILD MODELS ACROSS SPECIES
 
-setwd("/Volumes/GoogleDrive/My Drive/Buckley/Work/SDMpriors/out/")
-pdf("priors_brms.pdf", height = 10, width = 12)
+pdf("out/priors_brms.pdf", height = 10, width = 12)
 
 par(mfrow=c(5,4), cex=1.2, mar=c(3, 3, 1.5, 0.5), oma=c(0,0,0,0), lwd=1, bty="o", tck=0.02, mgp=c(1, 0, 0))
 
@@ -156,8 +161,7 @@ for(spec.k in 1:nrow(dat)){
 #spec.k=4
 
 #load presence absence
-setwd("/Volumes/GoogleDrive/Shared Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
-pa= read.csv(paste("PresAbs_",dat$spec[spec.k],".csv",sep=""))
+pa= read.csv(paste("out/presabs/PresAbs_",dat$spec[spec.k],".csv",sep=""))
 
 #----
 #plot localities and temperature

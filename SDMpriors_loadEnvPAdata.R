@@ -3,16 +3,18 @@ library(ggplot2)
 
 #--------------------------------
 #setwd
-setwd("/Volumes/GoogleDrive/Shared Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
+desktop<- "y"
+if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
+if(desktop=="n") setwd("/Users/lbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
 
 #load species data
 #for species with presence absence data, currently 48 species
-spec.dat= read.csv("SpeciesList_PresAbs.csv")
+spec.dat= read.csv("out/presabs/SpeciesList_PresAbs.csv")
 #tmin and tmax are critical thermal limits that we are thinking to use to define the prior
 #prior functions we've explored are in SDMpriors_priors.R file
 
 #load environmental data
-env.dat= read.csv("EnviDat.csv")
+env.dat= read.csv("out/presabs/EnviDat.csv")
 #envi variables are as follows:
 #data from microclim dataset, https://www.nature.com/articles/sdata20146
 #tmax0= annual daily maximum temperature with 0 shade, tmin_0= annual daily minimum temperature with 0 shade, 
@@ -28,8 +30,7 @@ env.dat= read.csv("EnviDat.csv")
 for(spec.k in nrow(spec.dat)){ 
   
   #load presence absence
-  setwd("/Volumes/GoogleDrive/Shared Drives/TrEnCh/Projects/SDMpriors/out/presabs/")
-  filename<-paste("PresAbs_", spec.dat$spec[spec.k],".csv", sep="")
+  filename<-paste("out/presabs/PresAbs_", spec.dat$spec[spec.k],".csv", sep="")
   
   #load pa data
   pa<- read.csv(filename)
