@@ -8,6 +8,8 @@
 # Lengthscale optimization
 # Visualization
 
+library(ggplot2)
+
 # Install and load necessary packages
 packages <- c("raster", "sp", "dplyr", "mgcv", "ROCR", "kernlab")
 for(pkg in packages) {
@@ -271,84 +273,29 @@ physiological_prior <- function(data,
   return(logit_prob)
 }
 
-
-
-
-
-#---------------------
-# Example Usage
-
-# load physiological priors from Sunday database
-if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
-if(desktop=="n") setwd("/Users/lbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
-
-dat= read.csv("out/presabs/SpeciesList_PresAbs.csv")
-
-#Load envi data
-#DATA CAN BE DOWNLOADED TO SHARED DRIVE FROM HERE: https://figshare.com/collections/microclim_Global_estimates_of_hourly_microclimate_based_on_long_term_monthly_climate_averages/878253
-#USED 1cm Air temperature
-
-if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/My Drive/Buckley/Work/SDMpriors/")
-if(desktop=="n") setwd("/Users/lbuckley/Google Drive/My Drive/Buckley/Work/SDMpriors/")
-
-#load all clim data
-#use july for max
-temp= brick("data/microclim/0_shade/TA1cm_soil_0_7.nc")
-tmax_0= mean(temp) #or max
-
-#use july for max
-temp= brick("data/microclim/50_shade/TA1cm_soil_50_7.nc")
-tmax_50= mean(temp)
-
-#use july for max
-temp= brick("data/microclim/100_shade/TA1cm_soil_100_7.nc")
-tmax_100= mean(temp)
-
-#---------------
-#load presence absence
-if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
-if(desktop=="n") setwd("/Users/lbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
-
-spec.k<-4
-
-#load presence absence
-pa= read.csv(paste("out/presabs/PresAbs_",dat$spec[spec.k],".csv",sep=""))
-
-#----
-# Split into training and testing sets
-train_idx <- sample(1:n, 0.7 * n)
-train_data <- pa[train_idx, ]
-test_data <- pa[-train_idx, ]
-
-# Define custom physiological prior function
-my_prior <- function(data) {
-  physiological_prior(
-    data, 
-    temp_opt = 22, 
-    temp_tol = 6,
-    precip_min = 400, 
-    precip_max = 1800
-  )
+#just temperature
+temperature_prior <- function(data, 
+                                temp_col = "temperature", 
+                                temp_opt = 20, 
+                                temp_tol = 5) {
+  
+  # Extract environmental variables
+  temp <- data[,temp_col]
+  
+  # Calculate individual responses
+  temp_prob <- temp_response(temp, temp_opt, temp_tol)
+  
+  # Combine responses (multiplicative assumption)
+  combined_prob <- temp_prob
+  
+  # Constrain probabilities to avoid numerical issues
+  combined_prob <- pmax(pmin(combined_prob, 0.9999), 0.0001)
+  
+  # Convert to logit scale
+  logit_prob <- log(combined_prob / (1 - combined_prob))
+  
+  return(logit_prob)
 }
-
-# Fit GP model without physiological prior
-gp_flat <- gp_sdm(
-  pres ~ tmin50 + tmax50,
-  data = train_data,
-  lengthscales = c(tmin50 = 5, tmin50 = 500)
-)
-
-# Fit GP model with physiological prior
-gp_prior <- gp_sdm(
-  presence ~ temperature + precipitation,
-  data = train_data,
-  mean_function = my_prior,
-  lengthscales = c(temperature = 5, precipitation = 500)
-)
-
-# Make predictions
-pred_flat <- predict(gp_flat, test_data)
-pred_prior <- predict(gp_prior, test_data)
 
 # Evaluate model performance
 evaluate_model <- function(predictions, observations) {
@@ -362,18 +309,6 @@ evaluate_model <- function(predictions, observations) {
   
   return(list(AUC = auc, RMSE = rmse))
 }
-
-# Compare models
-eval_flat <- evaluate_model(pred_flat, test_data$presence)
-eval_prior <- evaluate_model(pred_prior, test_data$presence)
-
-results <- data.frame(
-  Model = c("GP-Flat", "GP-Prior"),
-  AUC = c(eval_flat$AUC, eval_prior$AUC),
-  RMSE = c(eval_flat$RMSE, eval_prior$RMSE)
-)
-
-print(results)
 
 #Spatial Prediction with Raster Data
 #' Predict to Raster
@@ -598,62 +533,79 @@ opt_result <- optimize_lengthscales(
 
 print(opt_result$lengthscales)
 
-#------------------
-#example
+#===========================
+#Example
 
-# Generate synthetic data for demonstration
-set.seed(123)
-n <- 200
-x1 <- runif(n, 5, 35)  # Temperature
-x2 <- runif(n, 0, 3000)  # Precipitation
+# load physiological priors from Sunday database
+if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
+if(desktop=="n") setwd("/Users/lbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
 
-# Generate true response based on physiological constraints
-temp_prob <- temp_response(x1, optimal_temp = 22, tolerance = 6)
-precip_prob <- precip_response(x2, min_precip = 400, max_precip = 1800)
-true_prob <- temp_prob * precip_prob
+dat= read.csv("out/presabs/SpeciesList_PresAbs.csv")
 
-# Generate binary observations with some noise
-y <- rbinom(n, 1, true_prob)
+#Load envi data
+#DATA CAN BE DOWNLOADED TO SHARED DRIVE FROM HERE: https://figshare.com/collections/microclim_Global_estimates_of_hourly_microclimate_based_on_long_term_monthly_climate_averages/878253
+#USED 1cm Air temperature
 
-# Create data frame
-data <- data.frame(
-  presence = y,
-  temperature = x1,
-  precipitation = x2
-)
+if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/My Drive/Buckley/Work/SDMpriors/")
+if(desktop=="n") setwd("/Users/lbuckley/Google Drive/My Drive/Buckley/Work/SDMpriors/")
 
+#load all clim data
+#use july for max
+temp= brick("data/microclim/0_shade/TA1cm_soil_0_7.nc")
+tmax_0= mean(temp) #or max
+
+#use july for max
+temp= brick("data/microclim/50_shade/TA1cm_soil_50_7.nc")
+tmax_50= mean(temp)
+
+#use july for max
+temp= brick("data/microclim/100_shade/TA1cm_soil_100_7.nc")
+tmax_100= mean(temp)
+
+#---------------
+#load presence absence
+if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
+if(desktop=="n") setwd("/Users/lbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
+
+spec.k<-4
+
+#load presence absence
+pa= read.csv(paste("out/presabs/PresAbs_",dat$spec[spec.k],".csv",sep=""))
+
+#----
 # Split into training and testing sets
 train_idx <- sample(1:n, 0.7 * n)
-train_data <- data[train_idx, ]
-test_data <- data[-train_idx, ]
+train_data <- pa[train_idx, ]
+test_data <- pa[-train_idx, ]
 
 # Define physiological prior
-my_prior <- function(data) {
-  physiological_prior(
+my_prior <- function(data, temp_col) {
+  temperature_prior(
     data, 
+    temp_col="tmax50",
     temp_opt = 22, 
-    temp_tol = 6,
-    precip_min = 400, 
-    precip_max = 1800
+    temp_tol = 6
   )
 }
 
 # Optimize lengthscales
 opt_result <- optimize_lengthscales(
-  presence ~ temperature + precipitation,
+  pres ~ tmax50,
   data = train_data,
   mean_function = my_prior
 )
 
 # Fit models with optimized lengthscales
+# Fit GP model without physiological prior
 gp_flat <- gp_sdm(
-  presence ~ temperature + precipitation,
+  pres ~ tmax50,
   data = train_data,
   lengthscales = opt_result$lengthscales
 )
 
+# Fit GP model with physiological prior
 gp_prior <- gp_sdm(
-  presence ~ temperature + precipitation,
+  pres ~ tmax50,
   data = train_data,
   mean_function = my_prior,
   lengthscales = opt_result$lengthscales
@@ -663,11 +615,10 @@ gp_prior <- gp_sdm(
 pred_flat <- predict(gp_flat, test_data)
 pred_prior <- predict(gp_prior, test_data)
 
-# Evaluate models
-eval_flat <- evaluate_model(pred_flat, test_data$presence)
-eval_prior <- evaluate_model(pred_prior, test_data$presence)
+# Compare models
+eval_flat <- evaluate_model(pred_flat, test_data$pres)
+eval_prior <- evaluate_model(pred_prior, test_data$pres)
 
-# Compare results
 results <- data.frame(
   Model = c("GP-Flat", "GP-Prior"),
   AUC = c(eval_flat$AUC, eval_prior$AUC),
@@ -676,9 +627,55 @@ results <- data.frame(
 
 print(results)
 
+#---------
 # Visualize model predictions
-library(ggplot2)
 
+#extract values
+pts= rasterToPoints(tmax50)
+#pts= rasterToPoints(tmax50)
+colnames(pts)=c("lon","lat","tmax50")
+pts= as.data.frame(pts)
+
+pts$pres<- NA
+
+#predictions
+pred_flat <- predict(gp_flat, newdata=pts)
+pred_prior <- predict(gp_prior, newdata=pts)
+
+#combine predictions
+pts= cbind(pts, pred_flat[,1], pred_prior[,1])
+colnames(pts)[(ncol(pts)-1):ncol(pts)]=c("occ_pp","occ_np")
+
+#plot
+#to long format
+pts.l <- melt(pts, id=c("lon","lat","trmax"))
+#presence points
+pres= subset(pa, pa$pres=="1")
+pres$variable="occ_pp"
+#replicate pres for plotting
+pres2<- pres
+pres2$variable="occ_np"
+pres.all= rbind(pres, pres2)
+
+#trmax
+tr.plot=ggplot(pts, aes(lat, lon, fill= trmax)) + 
+  geom_tile()+scale_fill_viridis(na.value = 'grey')
+
+#predictions
+occ.plot= ggplot(pts.l, aes(lat, lon)) + 
+  geom_tile(aes(fill= value))+scale_fill_viridis(na.value = 'grey') +facet_wrap(~variable, nrow=1)+
+  ggtitle(dat$species[spec.k])
+#add localities
+occ.plot= occ.plot +geom_point(pres.all, mapping=aes(lat, lon, color="red"))
+
+#combine plots
+print(occ.plot)
+#plot_grid(tr.plot, occ.plot, resp_np, resp_pp)
+
+
+
+
+#&&&&&&&&&&&&&&
 # Create prediction grid
 temp_seq <- seq(5, 35, length.out = 50)
 precip_seq <- seq(0, 3000, length.out = 50)
