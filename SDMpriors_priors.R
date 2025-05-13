@@ -21,9 +21,9 @@ library(virtualspecies)
 
 my.betaFun= function(x, CTmin= CTmin1, CTmax= CTmax1, alpha=0.3, gamma=0.3)  betaFun(x, CTmin, CTmax, alpha, gamma)
 
-plot(1:40, betaFun(1:40, CTmin1, CTmax1, 0.2, 0.2), type="l") #broad
-plot(1:40, betaFun(1:40, CTmin1, CTmax1, 0.3, 0.3), type="l")
-plot(1:40, betaFun(1:40, CTmin1, CTmax1, 0.5,  0.2), type="l") #skewed
+plot(1:40, my.betaFun(1:40, CTmin1, CTmax1, 0.2, 0.2), type="l") #broad
+plot(1:40, my.betaFun(1:40, CTmin1, CTmax1, 0.3, 0.3), type="l")
+plot(1:40, my.betaFun(1:40, CTmin1, CTmax1, 0.5,  0.2), type="l") #skewed
 
 #-----------
 #custnorm(x, mean, diff, prob)

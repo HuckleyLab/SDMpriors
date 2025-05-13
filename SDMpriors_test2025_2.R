@@ -8,7 +8,14 @@
 # Lengthscale optimization
 # Visualization
 
+desktop<- "n"
+
 library(ggplot2)
+library(reshape)
+library(viridis)
+
+#source priors
+source("SDMpriors_priors.R")
 
 # Install and load necessary packages
 packages <- c("raster", "sp", "dplyr", "mgcv", "ROCR", "kernlab")
@@ -36,7 +43,7 @@ gp_sdm <- function(formula, data, mean_function = NULL,
   # Extract response and predictor variables
   mf <- model.frame(formula, data)
   y <- model.response(mf)
-  X <- model.matrix(formula, data)[, -1, drop = FALSE]  # Remove intercept
+  X <- model.matrix(formula, mf)[, -1, drop = FALSE]  # Remove intercept
   
   # Set default lengthscales if not provided
   if (is.null(lengthscales)) {
@@ -203,100 +210,42 @@ predict.gp_sdm <- function(object, newdata, type = "response") {
 #--------------------------------
 #Physiological Prior Functions
 #Now let's implement some physiological prior functions that can be used as mean functions in our GP model:
+#see SDMpriors_test.R for combined priors
 
 #' Temperature Response Function
 #' 
-#' @param temp Temperature values
-#' @param optimal_temp Optimal temperature for the species
-#' @param tolerance Temperature tolerance (width of response curve)
-#' @return Probability values between 0 and 1
-temp_response <- function(temp, optimal_temp = 20, tolerance = 5) {
-  # A Gaussian response curve centered at optimal temperature
-  prob <- exp(-((temp - optimal_temp)^2) / (2 * tolerance^2))
-  return(prob)
-}
-
-#' Precipitation Response Function
-#' 
-#' @param precip Precipitation values
-#' @param min_precip Minimum viable precipitation
-#' @param max_precip Optimal maximum precipitation
-#' @return Probability values between 0 and 1
-precip_response <- function(precip, min_precip = 300, max_precip = 2000) {
-  # Sigmoid response with decline after maximum
-  prob <- 1 / (1 + exp(-0.01 * (precip - min_precip)))
-  # Declining response after maximum
-  high_idx <- which(precip > max_precip)
-  if (length(high_idx) > 0) {
-    decline_factor <- 1 - (precip[high_idx] - max_precip) / max_precip
-    decline_factor <- pmax(0, pmin(1, decline_factor))  # Constrain to [0,1]
-    prob[high_idx] <- prob[high_idx] * decline_factor
-  }
-  return(prob)
-}
-
-#' Combined Physiological Response Function
-#' 
 #' @param data Data frame with environmental variables
 #' @param temp_col Name of temperature column
-#' @param precip_col Name of precipitation column
-#' @param temp_opt Optimal temperature
-#' @param temp_tol Temperature tolerance
-#' @param precip_min Minimum viable precipitation
-#' @param precip_max Maximum optimal precipitation
+#' @param ctmin critical thermal minima
+#' @param ctmax critical thermal maxima
+#' @param type prior type in "beta", "gaussian", "poly", "threshold", "sigmoid"
 #' @return Logit-transformed probabilities for use as GP prior mean
-physiological_prior <- function(data, 
-                                temp_col = "temperature", 
-                                precip_col = "precipitation",
-                                temp_opt = 20, 
-                                temp_tol = 5,
-                                precip_min = 300, 
-                                precip_max = 2000) {
-  
-  # Extract environmental variables
-  temp <- data[[temp_col]]
-  precip <- data[[precip_col]]
-  
-  # Calculate individual responses
-  temp_prob <- temp_response(temp, temp_opt, temp_tol)
-  precip_prob <- precip_response(precip, precip_min, precip_max)
-  
-  # Combine responses (multiplicative assumption)
-  combined_prob <- temp_prob * precip_prob
-  
-  # Constrain probabilities to avoid numerical issues
-  combined_prob <- pmax(pmin(combined_prob, 0.9999), 0.0001)
-  
-  # Convert to logit scale
-  logit_prob <- log(combined_prob / (1 - combined_prob))
-  
-  return(logit_prob)
-}
-
-#just temperature
 temperature_prior <- function(data, 
-                                temp_col = "temperature", 
-                                temp_opt = 20, 
-                                temp_tol = 5) {
+                              temp_col = "temperature", 
+                              ctmin = 5, 
+                              ctmax = 35,
+                              type= "sigmoid") {
   
   # Extract environmental variables
   temp <- data[,temp_col]
   
   # Calculate individual responses
-  temp_prob <- temp_response(temp, temp_opt, temp_tol)
-  
-  # Combine responses (multiplicative assumption)
-  combined_prob <- temp_prob
-  
+  if(type=="beta") temp_prob<- my.betaFun(temp, CTmin=ctmin, CTmax=ctmax, 0.2, 0.2)
+  if(type=="gaussian") temp_prob<- my.custnorm(temp, CTmin=ctmin, CTmax=ctmax, prob=0.99)
+  if(type=="poly") temp_prob<- poly.prior(temp, CTmin=ctmin, CTmax=ctmax)
+  if(type=="threshold") temp_prob<- thresh.prior(temp, CTmin=ctmin, CTmax=ctmax)
+  if(type=="sigmoid") temp_prob<- sigmoid.prior(temp, CTmin=ctmin, CTmax=ctmax)
+    
   # Constrain probabilities to avoid numerical issues
-  combined_prob <- pmax(pmin(combined_prob, 0.9999), 0.0001)
+    temp_prob <- pmax(pmin(temp_prob, 0.9999), 0.0001)
   
   # Convert to logit scale
-  logit_prob <- log(combined_prob / (1 - combined_prob))
+  logit_prob <- log(temp_prob / (1 - temp_prob))
   
   return(logit_prob)
 }
 
+#-----------------------------------------------------------
 # Evaluate model performance
 evaluate_model <- function(predictions, observations) {
   # Calculate AUC
@@ -330,6 +279,7 @@ predict_to_raster <- function(model, raster_stack) {
   
   # Remove rows with NA
   raster_df_complete <- na.omit(raster_df)
+  raster_df_complete$pres<-NA
   
   # Make predictions
   predictions <- predict(model, raster_df_complete, type = "response")
@@ -379,7 +329,7 @@ cross_validate_gp <- function(formula, data, mean_functions, k = 5,
   for (i in 1:k) {
     # Split data
     train_data <- data[folds != i, ]
-    test_data <- data[folds == i, ]
+    test_data <- data[which(folds == i), ]
     
     # Loop through mean functions
     for (name in names(mean_functions)) {
@@ -397,7 +347,7 @@ cross_validate_gp <- function(formula, data, mean_functions, k = 5,
       predictions <- predict(model, test_data)
       
       # Evaluate
-      eval_metrics <- evaluate_model(predictions, test_data$presence)
+      eval_metrics <- evaluate_model(predictions, test_data$pres)
       
       # Store results
       fold_results <- data.frame(
@@ -423,29 +373,6 @@ cross_validate_gp <- function(formula, data, mean_functions, k = 5,
   
   return(list(fold_results = results, summary = summary))
 }
-
-# Example usage
-# Define different prior functions to compare
-mean_functions <- list(
-  "Flat" = function(data) rep(0, nrow(data)),
-  "Temperature_Only" = function(data) {
-    temp_prob <- temp_response(data$temperature, optimal_temp = 22, tolerance = 6)
-    return(log(temp_prob / (1 - temp_prob)))
-  },
-  "Full_Physiological" = my_prior
-)
-
-# Run cross-validation
-cv_results <- cross_validate_gp(
-  presence ~ temperature + precipitation,
-  data = data,
-  mean_functions = mean_functions,
-  k = 5,
-  lengthscales = c(temperature = 5, precipitation = 500)
-)
-
-# Print summary
-print(cv_results$summary)
 
 #---------------
 #length scale optimization
@@ -523,16 +450,6 @@ optimize_lengthscales <- function(formula, data, mean_function = NULL,
   ))
 }
 
-# Example usage
-opt_result <- optimize_lengthscales(
-  presence ~ temperature + precipitation,
-  data = train_data,
-  mean_function = my_prior,
-  init_lengthscales = c(temperature = 5, precipitation = 500)
-)
-
-print(opt_result$lengthscales)
-
 #===========================
 #Example
 
@@ -553,62 +470,104 @@ if(desktop=="n") setwd("/Users/lbuckley/Google Drive/My Drive/Buckley/Work/SDMpr
 #use july for max
 temp= brick("data/microclim/0_shade/TA1cm_soil_0_7.nc")
 tmax_0= mean(temp) #or max
+names(tmax_0)<-"tmax0"
 
 #use july for max
 temp= brick("data/microclim/50_shade/TA1cm_soil_50_7.nc")
 tmax_50= mean(temp)
+names(tmax_50)<-"tmax50"
 
 #use july for max
 temp= brick("data/microclim/100_shade/TA1cm_soil_100_7.nc")
 tmax_100= mean(temp)
-
+names(tmax_100)<-"tmax100"
 #---------------
 #load presence absence
 if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
 if(desktop=="n") setwd("/Users/lbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
 
-spec.k<-4
+spec.k<-5
 
 #load presence absence
 pa= read.csv(paste("out/presabs/PresAbs_",dat$spec[spec.k],".csv",sep=""))
 
 #----
+#plot localities and temperature
+#crop to observed range 
+ext = extent(rbind(range(pa$lon), range(pa$lat))) # define the extent
+# extent
+ext[1]= ext[1]-10; ext[2]= ext[2]+10; ext[3]=ext[3]-10; ext[4]=ext[4]+10
+#crop
+tmax0=  crop(tmax_0, ext)
+tmax50=  crop(tmax_50, ext)
+tmax100=  crop(tmax_100, ext)
+
+#------
+#model thermoregulation
+#Set up prior
+CTmin1= dat$tmin[spec.k]
+CTmax1= dat$tmax[spec.k]
+#approximate Topt, but fix based on data
+Topt= CTmin1+ (CTmax1-CTmin1)*0.7
+
+#-----
+# sun to shade
+# thermoregulation scenario
+
+#max
+tmax0.dif= abs(tmax0 - Topt) 
+tmax50.dif= abs(tmax50 - Topt) 
+tmax100.dif= abs(tmax100 - Topt) 
+tmax.dif= stack(tmax0.dif, tmax50.dif, tmax100.dif)
+tr.ind= which.min(tmax.dif)
+
+tr<- tmax0
+tr[]<-NA
+tr[tr.ind==1]<- tmax0[tr.ind==1]
+tr[tr.ind==2]<- tmax50[tr.ind==2]
+tr[tr.ind==3]<- tmax100[tr.ind==3]
+trmax=tr
+names(trmax)<-"trmax"
+#----
 # Split into training and testing sets
-train_idx <- sample(1:n, 0.7 * n)
+train_idx <- sample(1:nrow(pa), 0.7 * nrow(pa))
 train_data <- pa[train_idx, ]
 test_data <- pa[-train_idx, ]
 
+#------------------------------
 # Define physiological prior
-my_prior <- function(data, temp_col) {
+my_prior <- function(data, temp_col, ctmin=dat$tmin[spec.k], ctmax=dat$tmax[spec.k]) {
   temperature_prior(
     data, 
-    temp_col="tmax50",
-    temp_opt = 22, 
-    temp_tol = 6
+    temp_col="trmax",
+    ctmin = ctmin, 
+    ctmax = ctmax,
+    type= "sigmoid"
   )
 }
 
+#--------------------------------
 # Optimize lengthscales
-opt_result <- optimize_lengthscales(
-  pres ~ tmax50,
-  data = train_data,
-  mean_function = my_prior
-)
+# opt_result <- optimize_lengthscales(
+#   pres ~ trmax,
+#   data = train_data,
+#   mean_function = my_prior
+# )
 
 # Fit models with optimized lengthscales
 # Fit GP model without physiological prior
 gp_flat <- gp_sdm(
-  pres ~ tmax50,
+  pres ~ trmax,
   data = train_data,
-  lengthscales = opt_result$lengthscales
+  lengthscales = 5 #opt_result$lengthscales
 )
 
 # Fit GP model with physiological prior
 gp_prior <- gp_sdm(
-  pres ~ tmax50,
+  pres ~ trmax,
   data = train_data,
   mean_function = my_prior,
-  lengthscales = opt_result$lengthscales
+  lengthscales = 5 #opt_result$lengthscales
 )
 
 # Make predictions
@@ -627,20 +586,58 @@ results <- data.frame(
 
 print(results)
 
-#---------
+# Cross validate
+mean_functions <- list(
+  "Flat" = function(data) rep(0, nrow(data)),
+  # "Temperature_Only" = function(data) {
+  #   temp_prob <- temp_response(data$trmax, optimal_temp = 22, tolerance = 6)
+  #   return(log(temp_prob / (1 - temp_prob)))
+  # },
+  "Full_Physiological" = my_prior
+)
+
+# Run cross-validation
+cv_results <- cross_validate_gp(
+  pres ~ trmax,
+  data = train_data,
+  mean_functions = mean_functions,
+  k = 5,
+  lengthscales = 5
+)
+
+# Print summary
+print(cv_results$summary)
+
+#---------------------------
+
 # Visualize model predictions
+#raster approach
 
+# Add a dummy 'pres' layer (with all NA values)
+dummy_pres <- trmax
+values(dummy_pres) <- NA
+names(dummy_pres) <- "pres"
+
+# Stack them together
+pred_stack <- stack(dummy_pres, trmax)
+
+# Now predict
+prediction_raster <- raster::predict(pred_stack, gp_flat)
+plot(prediction_raster)
+
+pred_raster <- predict_to_raster(gp_flat, pred_stack)
+# plot(pred_raster)
+
+#-----------------
 #extract values
-pts= rasterToPoints(tmax50)
-#pts= rasterToPoints(tmax50)
-colnames(pts)=c("lon","lat","tmax50")
+pts= rasterToPoints(trmax)
+colnames(pts)=c("lon","lat","trmax")
 pts= as.data.frame(pts)
-
-pts$pres<- NA
+pts$pres<- 0
 
 #predictions
-pred_flat <- predict(gp_flat, newdata=pts)
-pred_prior <- predict(gp_prior, newdata=pts)
+pred_flat <- predict(gp_flat, newdata=pts, type="response")
+pred_prior <- predict(gp_prior, newdata=pts, type="response")
 
 #combine predictions
 pts= cbind(pts, pred_flat[,1], pred_prior[,1])
@@ -648,7 +645,7 @@ colnames(pts)[(ncol(pts)-1):ncol(pts)]=c("occ_pp","occ_np")
 
 #plot
 #to long format
-pts.l <- melt(pts, id=c("lon","lat","trmax"))
+pts.l <- melt(pts[,which(names(pts)!="pres")], id=c("lon","lat","trmax"))
 #presence points
 pres= subset(pa, pa$pres=="1")
 pres$variable="occ_pp"
@@ -670,57 +667,8 @@ occ.plot= occ.plot +geom_point(pres.all, mapping=aes(lat, lon, color="red"))
 
 #combine plots
 print(occ.plot)
-#plot_grid(tr.plot, occ.plot, resp_np, resp_pp)
 
-
-
-
-#&&&&&&&&&&&&&&
-# Create prediction grid
-temp_seq <- seq(5, 35, length.out = 50)
-precip_seq <- seq(0, 3000, length.out = 50)
-pred_grid <- expand.grid(temperature = temp_seq, precipitation = precip_seq)
-
-# Make predictions on grid
-pred_grid$presence <- NA
-pred_grid$flat <- predict(gp_flat, pred_grid)
-pred_grid$prior <- predict(gp_prior, pred_grid)
-pred_grid$true <- with(pred_grid, 
-                       temp_response(temperature, 22, 6) * 
-                         precip_response(precipitation, 400, 1800))
-
-# Plot results
-p1 <- ggplot(pred_grid, aes(x = temperature, y = precipitation, fill = flat)) +
-  geom_raster() +
-  scale_fill_viridis_c(limits = c(0, 1)) +
-  labs(title = "GP Model without Prior", fill = "Probability") +
-  theme_minimal()
-
-p2 <- ggplot(pred_grid, aes(x = temperature, y = precipitation, fill = prior)) +
-  geom_raster() +
-  scale_fill_viridis_c(limits = c(0, 1)) +
-  labs(title = "GP Model with Physiological Prior", fill = "Probability") +
-  theme_minimal()
-
-p3 <- ggplot(pred_grid, aes(x = temperature, y = precipitation, fill = true)) +
-  geom_raster() +
-  scale_fill_viridis_c(limits = c(0, 1)) +
-  labs(title = "True Physiological Response", fill = "Probability") +
-  theme_minimal()
-
-# Add training data points
-p1 <- p1 + geom_point(data = train_data, aes(color = factor(presence)), 
-                      size = 2, alpha = 0.7) +
-  scale_color_manual(values = c("white", "black"), name = "Presence")
-
-p2 <- p2 + geom_point(data = train_data, aes(color = factor(presence)), 
-                      size = 2, alpha = 0.7) +
-  scale_color_manual(values = c("white", "black"), name = "Presence")
-
-# Print plots
-print(p1)
-print(p2)
-print(p3)
+#================
 
 
 
