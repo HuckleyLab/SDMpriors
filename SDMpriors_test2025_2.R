@@ -8,11 +8,12 @@
 # Lengthscale optimization
 # Visualization
 
-desktop<- "n"
+desktop<- "y"
 
 library(ggplot2)
 library(reshape)
 library(viridis)
+library(patchwork)
 
 #source priors
 source("SDMpriors_priors.R")
@@ -483,7 +484,10 @@ names(tmax_100)<-"tmax100"
 
 #---------------
 #set up data storage
-
+#models<- array(NA, dim=c(nrow(dat), 3, 2), dimnames=list(dat$species, c("model","AUC","RMSE"),c("flat","prior") ))
+models<- matrix(NA, nrow=nrow(dat), ncol=6)
+rownames(models)<- dat$species
+models<- as.data.frame(models)
 
 #load presence absence
 if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
@@ -491,6 +495,7 @@ if(desktop=="n") setwd("/Users/lbuckley/Google Drive/Shared Drives/TrEnCh/Projec
 
 for(spec.k in 1:nrow(dat)){
 
+  print(spec.k)
 #load presence absence
 pa= read.csv(paste("out/presabs/PresAbs_",dat$spec[spec.k],".csv",sep=""))
 
@@ -558,7 +563,7 @@ pred= temperature_prior(pa, temp_col="trmax", ctmin=dat$tmin[spec.k], ctmax=dat$
 pa$pred= 1 / (1 + exp(-pred))
 
 #plot prior
-ggplot() +
+plot.prior<- ggplot() +
   geom_point(aes(trmax, pres), data=pa)+
   #add prior
   geom_line(aes(trmax, pred), data=pa)+
@@ -566,18 +571,19 @@ ggplot() +
 
 #--------------------------------
 # Optimize lengthscales
- opt_result <- optimize_lengthscales(
-   pres ~ trmax,
-   data = train_data,
-   mean_function = my_prior
- )
+
+ # opt_result <- optimize_lengthscales(
+ #   pres ~ trmax,
+ #   data = train_data,
+ #   mean_function = my_prior
+ # )
 
 # Fit models with optimized lengthscales
 # Fit GP model without physiological prior
 gp_flat <- gp_sdm(
   pres ~ trmax,
   data = train_data,
-  lengthscales = 5 #opt_result$lengthscales
+  lengthscales = 5 #opt_result$lengthscales #5
 )
 
 # Fit GP model with physiological prior
@@ -602,29 +608,30 @@ results <- data.frame(
   RMSE = c(eval_flat$RMSE, eval_prior$RMSE)
 )
 
-print(results)
+models[spec.k,1:3]<- c(results[1,])
+models[spec.k,4:6]<- c(results[2,])
 
-# Cross validate
-mean_functions <- list(
-  "Flat" = function(data) rep(0, nrow(data)),
-  # "Temperature_Only" = function(data) {
-  #   temp_prob <- temp_response(data$trmax, optimal_temp = 22, tolerance = 6)
-  #   return(log(temp_prob / (1 - temp_prob)))
-  # },
-  "Full_Physiological" = my_prior
-)
-
-# Run cross-validation
-cv_results <- cross_validate_gp(
-  pres ~ trmax,
-  data = train_data,
-  mean_functions = mean_functions,
-  k = 5,
-  lengthscales = 5
-)
-
-# Print summary
-print(cv_results$summary)
+# # Cross validate
+# mean_functions <- list(
+#   "Flat" = function(data) rep(0, nrow(data)),
+#   # "Temperature_Only" = function(data) {
+#   #   temp_prob <- temp_response(data$trmax, optimal_temp = 22, tolerance = 6)
+#   #   return(log(temp_prob / (1 - temp_prob)))
+#   # },
+#   "Full_Physiological" = my_prior
+# )
+# 
+# # Run cross-validation
+# cv_results <- cross_validate_gp(
+#   pres ~ trmax,
+#   data = train_data,
+#   mean_functions = mean_functions,
+#   k = 5,
+#   lengthscales = opt_result$lengthscales
+# )
+# 
+# # Print summary
+# print(cv_results$summary)
 
 #---------------------------
 #point based approach
@@ -664,8 +671,13 @@ occ.plot= ggplot(pts.l, aes(lon, lat)) +
 #add localities
 occ.plot= occ.plot +geom_point(pres.all, mapping=aes(lon, lat, color="red"))
 
-#combine plots
-print(occ.plot)
+#combine and write out
+design <- "ABBB"
+
+#save figure 
+pdf(paste("./figures/",dat$species[spec.k], ".pdf", sep=""),height = 6, width = 10)
+plot.prior + occ.plot + plot_layout(design = design)
+dev.off()
 
 } #end loop species
 
