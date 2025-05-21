@@ -218,7 +218,7 @@ predict.gp_sdm <- function(object, newdata, type = "response") {
 #' @param temp_col Name of temperature column
 #' @param ctmin critical thermal minima
 #' @param ctmax critical thermal maxima
-#' @param type prior type in "beta", "gaussian", "poly", "threshold", "sigmoid"
+#' @param type prior type in "beta", "gaussian", "poly", "threshold", "sigmoid", "tpc"
 #' @return Logit-transformed probabilities for use as GP prior mean
 temperature_prior <- function(data, 
                               temp_col = "temperature", 
@@ -232,12 +232,11 @@ temperature_prior <- function(data,
   # Calculate individual responses
   if(type=="beta") temp_prob<- my.betaFun(temp, CTmin=ctmin, CTmax=ctmax, 0.2, 0.2)
   if(type=="gaussian") temp_prob<- my.custnorm(temp, CTmin=ctmin, CTmax=ctmax, prob=0.99)
-  if(type=="poly") temp_prob<- poly.prior(temp, CTmin=ctmin, CTmax=ctmax)
+  if(type=="poly") temp_prob<- poly.prior(temp, CTmin=ctmin, CTmax=ctmax, pmax=1)
   if(type=="threshold") temp_prob<- thresh.prior(temp, CTmin=ctmin, CTmax=ctmax)
-  if(type=="sigmoid") temp_prob<- sigmoid.prior(temp, CTmin=ctmin, CTmax=ctmax)
-    
-  # Constrain probabilities to avoid numerical issues
-    temp_prob <- pmax(pmin(temp_prob, 0.9999), 0.0001)
+  if(type=="sigmoid") temp_prob<- sigmoid.prior(temp, CTmin=ctmin, CTmax=ctmax, high_p=1)
+  if(type=="sigmoid") temp_prob<- sigmoid.prior(temp, CTmin=ctmin, CTmax=ctmax, high_p=1)
+  if(type=="tpc") temp_prob<- TPC.prior(temp, CTmin=ctmin, CTmax=ctmax) 
   
   # Convert to logit scale
   logit_prob <- log(temp_prob / (1 - temp_prob))
@@ -481,12 +480,16 @@ names(tmax_50)<-"tmax50"
 temp= brick("data/microclim/100_shade/TA1cm_soil_100_7.nc")
 tmax_100= mean(temp)
 names(tmax_100)<-"tmax100"
+
 #---------------
+#set up data storage
+
+
 #load presence absence
 if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
 if(desktop=="n") setwd("/Users/lbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
 
-spec.k<-5
+for(spec.k in 1:nrow(dat)){
 
 #load presence absence
 pa= read.csv(paste("out/presabs/PresAbs_",dat$spec[spec.k],".csv",sep=""))
@@ -542,17 +545,32 @@ my_prior <- function(data, temp_col, ctmin=dat$tmin[spec.k], ctmax=dat$tmax[spec
     temp_col="trmax",
     ctmin = ctmin, 
     ctmax = ctmax,
-    type= "sigmoid"
+    type= "tpc"
   )
 }
 
+#-----------------
+#make predictions
+pred= temperature_prior(pa, temp_col="trmax", ctmin=dat$tmin[spec.k], ctmax=dat$tmax[spec.k], type="tpc")
+#"beta", "gaussian", "poly", "threshold", "sigmoid", "tpc"
+
+#convert back from logit scale
+pa$pred= 1 / (1 + exp(-pred))
+
+#plot prior
+ggplot() +
+  geom_point(aes(trmax, pres), data=pa)+
+  #add prior
+  geom_line(aes(trmax, pred), data=pa)+
+  xlim(0, 42)
+
 #--------------------------------
 # Optimize lengthscales
-# opt_result <- optimize_lengthscales(
-#   pres ~ trmax,
-#   data = train_data,
-#   mean_function = my_prior
-# )
+ opt_result <- optimize_lengthscales(
+   pres ~ trmax,
+   data = train_data,
+   mean_function = my_prior
+ )
 
 # Fit models with optimized lengthscales
 # Fit GP model without physiological prior
@@ -609,26 +627,7 @@ cv_results <- cross_validate_gp(
 print(cv_results$summary)
 
 #---------------------------
-
-# Visualize model predictions
-#raster approach
-
-# Add a dummy 'pres' layer (with all NA values)
-dummy_pres <- trmax
-values(dummy_pres) <- NA
-names(dummy_pres) <- "pres"
-
-# Stack them together
-pred_stack <- stack(dummy_pres, trmax)
-
-# Now predict
-prediction_raster <- raster::predict(pred_stack, gp_flat)
-plot(prediction_raster)
-
-pred_raster <- predict_to_raster(gp_flat, pred_stack)
-# plot(pred_raster)
-
-#-----------------
+#point based approach
 #extract values
 pts= rasterToPoints(trmax)
 colnames(pts)=c("lon","lat","trmax")
@@ -655,20 +654,46 @@ pres2$variable="occ_np"
 pres.all= rbind(pres, pres2)
 
 #trmax
-tr.plot=ggplot(pts, aes(lat, lon, fill= trmax)) + 
+tr.plot=ggplot(pts, aes(lon, lat, fill= trmax)) + 
   geom_tile()+scale_fill_viridis(na.value = 'grey')
 
 #predictions
-occ.plot= ggplot(pts.l, aes(lat, lon)) + 
+occ.plot= ggplot(pts.l, aes(lon, lat)) + 
   geom_tile(aes(fill= value))+scale_fill_viridis(na.value = 'grey') +facet_wrap(~variable, nrow=1)+
   ggtitle(dat$species[spec.k])
 #add localities
-occ.plot= occ.plot +geom_point(pres.all, mapping=aes(lat, lon, color="red"))
+occ.plot= occ.plot +geom_point(pres.all, mapping=aes(lon, lat, color="red"))
 
 #combine plots
 print(occ.plot)
 
+} #end loop species
+
 #================
+#alternative visualization of model predictions
+# Visualize model predictions
+#raster approach
 
+# Add a dummy 'pres' layer (with all NA values)
+dummy_pres <- trmax
+values(dummy_pres) <- 0
+names(dummy_pres) <- "pres"
 
+# Stack them together
+pred_stack <- stack(dummy_pres, trmax)
+
+# Now predict
+prediction_raster <- raster::predict(pred_stack, gp_flat)
+plot(prediction_raster)
+
+prediction_raster_prior <- raster::predict(pred_stack, gp_prior)
+plot(prediction_raster_prior)
+
+#add localities
+#ppt= subset(pa, pa$pres=="0")
+#points(ppt$lon, ppt$lat)
+ppt= subset(pa, pa$pres=="1")
+points(ppt$lon, ppt$lat, pch=16)
+
+#-----------------
 

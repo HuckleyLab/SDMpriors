@@ -51,7 +51,7 @@ poly.prior <- function(x, CTmin= CTmin1, CTmax= CTmax1, pmax=0.5){
   return(P1)
 }
 
-plot(1:40, poly.prior(1:40, CTmin= CTmin1, CTmax= CTmax1), type="l")
+plot(1:40, poly.prior(1:40, CTmin= CTmin1, CTmax= CTmax1, pmax=1), type="l")
 
 #-----------
 #empirical TPC functions
@@ -96,7 +96,7 @@ plot(1:40, norm.prior(1:40, CTmin= CTmin1, CTmax= CTmax1), type="l")
 
 #----------
 #threshold prior
-thresh.prior <- function(x, CTmin= CTmin1, CTmax= CTmax1) ifelse(x< CTmin | x> CTmax, 0.2, 0.6)
+thresh.prior <- function(x, CTmin= CTmin1, CTmax= CTmax1) ifelse(x< CTmin | x> CTmax, 0.2, 1)
 
 plot(1:40, thresh.prior(1:40, CTmin= CTmin1, CTmax= CTmax1), type="l")
 
@@ -108,7 +108,7 @@ gensigmoid <- function(x, low, high, rate, v, origin) {
   return(low + ((high-low)/(1+(rate*exp((x-origin))))^(1/v)))
 }
 
-sigmoid.prior<- function(x, CTmin= CTmin1, CTmax= CTmax1, low_p=0.1, high_p=0.5, rate_p=5.5, v_p=2.5) {
+sigmoid.prior<- function(x, CTmin= CTmin1, CTmax= CTmax1, low_p=0.1, high_p=1, rate_p=5.5, v_p=2.5) {
   p= rep(NA, length(x))
   center= (CTmin + CTmax)/2
   p[which(x<=center)]= gensigmoid(x[which(x<=center)], low=high_p, high=low_p, rate=rate_p, v=v_p, origin=CTmin)
