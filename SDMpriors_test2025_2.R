@@ -8,6 +8,12 @@
 # Lengthscale optimization
 # Visualization
 
+#other packages
+#Gaussian process regression: https://cran.r-project.org/web/packages/GauPro/vignettes/GauPro.html
+#https://github.com/iiasa/ibis.iSDM
+#https://link.springer.com/article/10.1007/s13253-023-00595-6, https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.13897
+
+
 desktop<- "y"
 
 library(ggplot2)
@@ -488,6 +494,7 @@ names(tmax_100)<-"tmax100"
 models<- matrix(NA, nrow=nrow(dat), ncol=6)
 rownames(models)<- dat$species
 models<- as.data.frame(models)
+colnames(models)<- c("mod1", "AUC1", "RMSE1", "mod2", "AUC2", "RMSE2")
 
 #load presence absence
 if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/Shared Drives/TrEnCh/Projects/SDMpriors/")
@@ -675,11 +682,20 @@ occ.plot= occ.plot +geom_point(pres.all, mapping=aes(lon, lat, color="red"))
 design <- "ABBB"
 
 #save figure 
-pdf(paste("./figures/",dat$species[spec.k], ".pdf", sep=""),height = 6, width = 10)
-plot.prior + occ.plot + plot_layout(design = design)
+pdfname <- paste("./figures/",dat$species[spec.k], ".pdf", sep="")
+pdf(pdfname,height = 6, width = 10)
+print(plot.prior + occ.plot + plot_layout(design = design))
 dev.off()
 
 } #end loop species
+
+#-----------
+#examine results 
+plot(models$AUC1, models$AUC2)
+abline(a=0, b=1)
+
+plot(models$RMSE1, models$RMSE2)
+abline(a=0, b=1)
 
 #================
 #alternative visualization of model predictions
