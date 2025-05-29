@@ -10,8 +10,8 @@ library(patchwork)
 
 #ibis.iSDM package
 # For Installation directly from github
-install.packages("remotes")
-remotes::install_github("IIASA/ibis.iSDM")
+#install.packages("remotes")
+#remotes::install_github("IIASA/ibis.iSDM")
 
 #https://iiasa.github.io/ibis.iSDM/articles/02_train_simple_model.html
 #names(mod)
@@ -22,7 +22,6 @@ remotes::install_github("IIASA/ibis.iSDM")
 # Probabilistic priors with estimates placed on for example the mean (μ) and standard deviation (σ) or precision in the case of [engine_inla]
 
 #====================
-# Load the package
 # Load the package
 library(ibis.iSDM)
 library(inlabru)

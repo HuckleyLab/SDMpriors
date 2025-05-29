@@ -13,9 +13,6 @@
 #https://github.com/iiasa/ibis.iSDM
 #https://link.springer.com/article/10.1007/s13253-023-00595-6, https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.13897
 
-
-desktop<- "y"
-
 library(ggplot2)
 library(reshape)
 library(viridis)
@@ -60,7 +57,7 @@ gp_sdm <- function(formula, data, mean_function = NULL,
   
   # Set default mean function if not provided
   if (is.null(mean_function)) {
-    mean_function <- function(X) rep(0, nrow(X))
+    mean_function <- function(X) rep(0.5, nrow(X)) #or set to 0, try constant 0.5
   }
   
   # Compute prior mean
