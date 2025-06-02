@@ -1,7 +1,7 @@
 
 #Try out lepidoptera models using IBIS iSDM
 
-desktop<- "y"
+desktop<- "n"
 
 library(ggplot2)
 library(reshape)
@@ -48,7 +48,7 @@ spc$lepmatch <- match(spc$GenSpec, lept$verbatimSpecies)
 
 #thermal database
 if(desktop=="y") setwd("/Users/laurenbuckley/Google Drive/My Drive/Buckley/Work/SDMpriors/data/")
-if(desktop=="n") setwd("/Users/lbuckley/My Drive/Buckley/Work/SDMpriors/data/")
+if(desktop=="n") setwd("/Users/lbuckley/Google Drive/My Drive/Buckley/Work/SDMpriors/data/")
 
 ct.dat<-read.csv("PapilioTherm/PapilioThermMultiContinentalCT_2.csv")
 spc$ctmatch<- match(spc$GenSpec, ct.dat$Latin_binomial)
@@ -83,6 +83,18 @@ y.dat<-read.csv("UKmoths/moths/processed/YData.csv")
 #use bioclim? https://www.worldclim.org/data/bioclim.html
 
 #https://catalogue.ceda.ac.uk/uuid/4dc8450d889a491ebb20e724debe2dfb/
+
+library(ncdf4)
+
+tmax<- nc_open("./UKclimate/tasmax_hadukgrid_uk_60km_seas-20y_198101-200012.nc")
+
+time <- ncvar_get(tmax,"time");# extracts time, days
+ncvar_get(tmax,"tasmax_1")
+
+tmax<- terra::rast("./UKclimate/tasmax_hadukgrid_uk_60km_seas-20y_198101-200012.nc")
+head(names(tmax))
+tmax[["tasmax_1"]]
+
 
 #================
 #UK butterfly analysis from Buckley et al 2011 Ecology
